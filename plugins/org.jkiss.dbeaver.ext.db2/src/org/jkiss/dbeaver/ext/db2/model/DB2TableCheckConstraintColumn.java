@@ -1,7 +1,6 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2013-2015 Denis Forveille (titou10.titou10@gmail.com)
- * Copyright (C) 2010-2023 DBeaver Corp and others
+ * Copyright (C) 2010-2026 DBeaver Corp and others
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,15 +30,17 @@ import org.jkiss.dbeaver.model.meta.Property;
  */
 public class DB2TableCheckConstraintColumn extends AbstractTableConstraintColumn {
 
-    private AbstractTableConstraint<DB2Table> constraint;
-    private DB2TableColumn tableColumn;
-    private DB2TableCheckConstraintColUsage usage;
+    private final AbstractTableConstraint<DB2Table, DB2TableCheckConstraintColumn> constraint;
+    private final DB2TableColumn tableColumn;
+    private final DB2TableCheckConstraintColUsage usage;
 
     // -----------------
     // Constructors
     // -----------------
 
-    public DB2TableCheckConstraintColumn(AbstractTableConstraint<DB2Table> constraint, DB2TableColumn tableColumn,
+    public DB2TableCheckConstraintColumn(
+        AbstractTableConstraint<DB2Table, DB2TableCheckConstraintColumn> constraint,
+        DB2TableColumn tableColumn,
         DB2TableCheckConstraintColUsage usage)
     {
         this.constraint = constraint;
@@ -48,7 +49,7 @@ public class DB2TableCheckConstraintColumn extends AbstractTableConstraintColumn
     }
 
     @Override
-    public AbstractTableConstraint<DB2Table> getParentObject()
+    public AbstractTableConstraint<DB2Table, DB2TableCheckConstraintColumn> getParentObject()
     {
         return constraint;
     }
@@ -79,7 +80,7 @@ public class DB2TableCheckConstraintColumn extends AbstractTableConstraintColumn
         return tableColumn.getName();
     }
 
-    @NotNull
+    @Nullable
     @Override
     @Property(id = "name", viewable = true, order = 1)
     public DB2TableColumn getAttribute()

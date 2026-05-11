@@ -1,6 +1,6 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2023 DBeaver Corp and others
+ * Copyright (C) 2010-2026 DBeaver Corp and others
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,10 @@
 package org.jkiss.dbeaver.model.impl.data;
 
 import org.jkiss.code.NotNull;
+import org.jkiss.code.Nullable;
+import org.jkiss.dbeaver.model.DBPEvaluationContext;
+import org.jkiss.dbeaver.model.DBPNamedObject;
+import org.jkiss.dbeaver.model.DBUtils;
 import org.jkiss.dbeaver.model.DBValueFormatting;
 import org.jkiss.dbeaver.model.data.DBDDisplayFormat;
 import org.jkiss.dbeaver.model.exec.DBCException;
@@ -57,11 +61,12 @@ public class DefaultValueHandler extends BaseValueHandler {
         int index,
         Object value) throws DBCException
     {
-        throw new DBCException("Object parameter [" + DBValueFormatting.getDefaultValueDisplayString(value, DBDDisplayFormat.UI) + "] binding not supported");
+        String objectName = type instanceof DBPNamedObject namedObject ? DBUtils.getObjectFullName(namedObject, DBPEvaluationContext.UI) : type.getTypeName();
+        throw new DBCException("Parameter [" + objectName + "] value [" + DBValueFormatting.getDefaultValueDisplayString(value, DBDDisplayFormat.UI) + "] binding not supported");
     }
 
     @Override
-    public Object getValueFromObject(@NotNull DBCSession session, @NotNull DBSTypedObject type, Object object, boolean copy, boolean validateValue) throws DBCException
+    public Object getValueFromObject(@NotNull DBCSession session, @NotNull DBSTypedObject type, @Nullable Object object, boolean copy, boolean validateValue) throws DBCException
     {
         return object;
     }

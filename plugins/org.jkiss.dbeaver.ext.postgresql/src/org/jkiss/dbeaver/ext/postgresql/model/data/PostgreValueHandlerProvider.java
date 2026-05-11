@@ -1,6 +1,6 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2023 DBeaver Corp and others
+ * Copyright (C) 2010-2026 DBeaver Corp and others
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
  */
 package org.jkiss.dbeaver.ext.postgresql.model.data;
 
+import org.jkiss.code.NotNull;
 import org.jkiss.code.Nullable;
 import org.jkiss.dbeaver.ext.postgresql.PostgreConstants;
 import org.jkiss.dbeaver.ext.postgresql.model.PostgreDataSource;
@@ -29,6 +30,7 @@ import org.jkiss.dbeaver.model.impl.jdbc.data.handlers.JDBCContentValueHandler;
 import org.jkiss.dbeaver.model.impl.jdbc.data.handlers.JDBCNumberValueHandler;
 import org.jkiss.dbeaver.model.impl.jdbc.data.handlers.JDBCStandardValueHandlerProvider;
 import org.jkiss.dbeaver.model.struct.DBSTypedObject;
+import org.jkiss.utils.CommonUtils;
 
 import java.sql.Types;
 
@@ -38,21 +40,38 @@ import java.sql.Types;
 public class PostgreValueHandlerProvider extends JDBCStandardValueHandlerProvider {
     @Nullable
     @Override
-    public DBDValueHandler getValueHandler(DBPDataSource dataSource, DBDFormatSettings preferences, DBSTypedObject typedObject) {
+    public DBDValueHandler getValueHandler(
+        @NotNull DBPDataSource dataSource,
+        @NotNull DBDFormatSettings preferences,
+        @NotNull DBSTypedObject typedObject
+    ) {
 //        // FIXME: This doesn't work as data type information is not available during RS metadata reading
 //        DBSDataType dataType = DBUtils.getDataType(typedObject);
 //        if (dataType instanceof PostgreDataType && ((PostgreDataType) dataType).getTypeCategory() == PostgreTypeCategory.E) {
 //            return PostgreEnumValueHandler.INSTANCE;
 //        }
         int typeID = typedObject.getTypeID();
+        String typeName = typedObject.getTypeName();
+        if (typeName == null) {
+            // Some databases that claim to be PostgreSQL-compliant, in fact, aren't compliant with its protocol.
+            // This results in scenarios where some JDBC APIs return nulls in unexpected places. For example, here.
+            return PostgreUnknownValueHandler.INSTANCE;
+        }
         switch (typeID) {
             case Types.ARRAY:
                 return PostgreArrayValueHandler.INSTANCE;
             case Types.STRUCT:
+                if (CommonUtils.isNotEmpty(typeName)
+                    && (PostgreConstants.TYPE_JSONB.equals(typeName) || PostgreConstants.TYPE_JSON.equals(typeName))
+                ) {
+                    // The special case for the OpenGauss database, which returns json types as a struct type.
+                    return PostgreJSONValueHandler.INSTANCE;
+                }
                 return PostgreStructValueHandler.INSTANCE;
             case Types.DATE:
-            case Types.TIME:
             case Types.TIME_WITH_TIMEZONE:
+            case Types.TIME:
+                return new PostgreDateTimeValueHandler(preferences);
             case Types.TIMESTAMP:
             case Types.TIMESTAMP_WITH_TIMEZONE:
                 if (((PostgreDataSource) dataSource).getServerType().supportsTemporalAccessor()) {
@@ -61,7 +80,7 @@ public class PostgreValueHandlerProvider extends JDBCStandardValueHandlerProvide
                     return new PostgreDateTimeValueHandler(preferences);
                 }
             default:
-                switch (typedObject.getTypeName()) {
+                switch (typeName) {
                     case PostgreConstants.TYPE_VARBYTE:
                         return JDBCContentValueHandler.INSTANCE;
                     case PostgreConstants.TYPE_JSONB:
@@ -85,7 +104,7 @@ public class PostgreValueHandlerProvider extends JDBCStandardValueHandlerProvide
                     case PostgreConstants.TYPE_INTERVAL:
                         return PostgreIntervalValueHandler.INSTANCE;
                     default:
-                        if (PostgreConstants.SERIAL_TYPES.containsKey(typedObject.getTypeName())) {
+                        if (PostgreConstants.SERIAL_TYPES.containsKey(typeName)) {
                             return new JDBCNumberValueHandler(typedObject, preferences);
                         }
                         if (typeID == Types.OTHER || typedObject.getDataKind() == DBPDataKind.STRING) {

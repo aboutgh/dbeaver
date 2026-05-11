@@ -1,6 +1,6 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2023 DBeaver Corp and others
+ * Copyright (C) 2010-2026 DBeaver Corp and others
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,11 +19,18 @@ package org.jkiss.dbeaver.runtime;
 
 import org.jkiss.code.NotNull;
 import org.jkiss.code.Nullable;
+import org.jkiss.dbeaver.DBException;
 import org.jkiss.dbeaver.Log;
+import org.jkiss.dbeaver.model.app.DBPApplicationWorkbench;
 import org.jkiss.dbeaver.model.app.DBPPlatform;
+import org.jkiss.dbeaver.model.impl.app.AbstractApplication;
+import org.jkiss.dbeaver.model.runtime.DBRRunnableWithParam;
 import org.jkiss.dbeaver.runtime.ui.DBPPlatformUI;
-import org.jkiss.dbeaver.runtime.ui.console.ConsoleUserInterface;
-import org.jkiss.dbeaver.utils.GeneralUtils;
+import org.jkiss.dbeaver.utils.BundleServiceRef;
+import org.jkiss.dbeaver.utils.RuntimeUtils;
+
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * Workbench
@@ -32,51 +39,62 @@ public class DBWorkbench {
 
     private static final Log log = Log.getLog(DBWorkbench.class);
 
-    private static final DBWorkbench instance = new DBWorkbench();
-    private static final ConsoleUserInterface CONSOLE_USER_INTERFACE = new ConsoleUserInterface();
+    private static DBPApplicationWorkbench applicationWorkbench;
+    private static final List<DBRRunnableWithParam<DBPPlatform>> initHooks = new ArrayList<>();
 
-    private static volatile DBPPlatform platformInstance = null;
-    private static volatile DBPPlatformUI platformUIInstance = null;
+    @NotNull
+    private static DBPApplicationWorkbench getApplicationWorkbench() {
+        if (applicationWorkbench == null) {
+            try {
+                AbstractApplication.getInstance();
+            } catch (Exception e) {
+                log.debug("Error checking application instance", e);
+            }
+            BundleServiceRef<DBPApplicationWorkbench> workbenchRef = RuntimeUtils.getBundleService(DBPApplicationWorkbench.class, true);
+            applicationWorkbench = workbenchRef.service();
+            if (applicationWorkbench == null) {
+                throw new IllegalStateException("Internal error: application workbench is not instantiated");
+            }
+            workbenchRef.initializeService();
+            DBPPlatform platform = applicationWorkbench.getPlatform();
 
-    public static DBPPlatform getPlatform() {
-        if (platformInstance == null) {
-            synchronized (DBWorkbench.class) {
-                if (platformInstance == null) {
-                    platformInstance = GeneralUtils.adapt(instance, DBPPlatform.class);
-                    if (platformInstance == null) {
-                        throw new IllegalStateException("Internal configuration error. Platform not instantiated.");
-                    }
+            // Run init hooks
+            for (DBRRunnableWithParam<DBPPlatform> hook : initHooks) {
+                try {
+                    hook.run(platform);
+                } catch (Throwable e) {
+                    throw new IllegalStateException("Error running platform init hook", e);
                 }
             }
+            initHooks.clear();
         }
-        return platformInstance;
+        return applicationWorkbench;
     }
 
+    @NotNull
+    public static DBPPlatform getPlatform() {
+        return getApplicationWorkbench().getPlatform();
+    }
+
+    @NotNull
     public static <T extends DBPPlatform> T getPlatform(Class<T> pc) {
         return pc.cast(getPlatform());
     }
 
-    public static DBPPlatformUI getPlatformUI() {
-        if (platformUIInstance == null) {
-            synchronized (DBWorkbench.class) {
-                if (platformUIInstance == null) {
-                    if (getPlatform().getApplication().isHeadlessMode()) {
-                        return CONSOLE_USER_INTERFACE;
-                    }
-                    platformUIInstance = GeneralUtils.adapt(instance, DBPPlatformUI.class);
-                    if (platformUIInstance == null) {
-                        // Use console UI
-                        log.debug("No platform UI installed. Use console interface.");
-                        platformUIInstance = CONSOLE_USER_INTERFACE;
-                    }
-                }
-            }
+    public static boolean isPlatformStarted() {
+        if (applicationWorkbench != null) {
+            return applicationWorkbench.getPlatform() != null;
         }
-        return platformUIInstance;
+        return false;
+    }
+
+    @NotNull
+    public static DBPPlatformUI getPlatformUI() {
+        return getApplicationWorkbench().getPlatformUI();
     }
 
     /**
-     * Service management
+     * Get service by class. Writes warning in log iuf service not found
      */
     @Nullable
     public static <T> T getService(@NotNull Class<T> serviceType) {
@@ -85,6 +103,11 @@ public class DBWorkbench {
             log.debug("Service '" + serviceType.getName() + "' not found");
         }
         return service;
+    }
+
+    @Nullable
+    public static <T> T findService(@NotNull Class<T> serviceType) {
+        return ServiceRegistry.getInstance().getService(serviceType);
     }
 
     /**
@@ -97,6 +120,14 @@ public class DBWorkbench {
 
     public static boolean hasFeature(@NotNull String feature) {
         return getPlatform().getApplication().hasProductFeature(feature);
+    }
+
+    public static void addInitializeHook(@NotNull DBRRunnableWithParam<DBPPlatform> hook) throws DBException {
+        if (isPlatformStarted()) {
+            hook.run(getPlatform());
+            return;
+        }
+        initHooks.add(hook);
     }
 
 }

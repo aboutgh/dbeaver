@@ -1,6 +1,6 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2023 DBeaver Corp and others
+ * Copyright (C) 2010-2026 DBeaver Corp and others
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,12 +31,12 @@ import org.jkiss.dbeaver.model.runtime.DBRProgressMonitor;
  */
 public interface DBDContent extends DBDValue {
 
+    @NotNull
     DBPDataSource getDataSource();
 
     /**
      * Content length in bytes.
      * @return length
-     * @throws DBCException
      */
     long getContentLength() throws DBCException;
 
@@ -47,10 +47,11 @@ public interface DBDContent extends DBDValue {
     @NotNull
     String getContentType();
 
-    String getDisplayString(DBDDisplayFormat format);
+    @Nullable
+    String getDisplayString(@NotNull DBDDisplayFormat format);
 
     @Nullable
-    DBDContentStorage getContents(DBRProgressMonitor monitor) throws DBCException;
+    DBDContentStorage getContents(@NotNull DBRProgressMonitor monitor) throws DBCException;
 
     /**
      * Update contents
@@ -58,11 +59,10 @@ public interface DBDContent extends DBDValue {
      * @param storage storage
      * @return true if implementation acquires passed storage object.
      *   false if implementation copies storage.
-     * @throws DBException
      */
     boolean updateContents(
-        DBRProgressMonitor monitor,
-        DBDContentStorage storage)
+        @NotNull DBRProgressMonitor monitor,
+        @Nullable DBDContentStorage storage)
         throws DBException;
 
     /**

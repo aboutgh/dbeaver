@@ -1,6 +1,6 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2023 DBeaver Corp and others
+ * Copyright (C) 2010-2026 DBeaver Corp and others
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
  */
 package org.jkiss.dbeaver.model.impl.data.formatters;
 
+import org.jkiss.code.NotNull;
 import org.jkiss.code.Nullable;
 import org.jkiss.dbeaver.Log;
 import org.jkiss.dbeaver.model.data.DBDDataFormatter;
@@ -47,7 +48,7 @@ public class NumberDataFormatter implements DBDDataFormatter {
     }
 
     @Override
-    public void init(DBSTypedObject type, Locale locale, Map<String, Object> properties)
+    public void init(DBSTypedObject type, @NotNull Locale locale, @NotNull Map<String, Object> properties)
     {
         numberFormat = (DecimalFormat) NumberFormat.getNumberInstance(locale);
         Object useGrouping = properties.get(NumberFormatSample.PROP_USE_GROUPING);
@@ -66,8 +67,8 @@ public class NumberDataFormatter implements DBDDataFormatter {
         if (minIntDigits != null) {
             numberFormat.setMinimumIntegerDigits(CommonUtils.toInt(minIntDigits));
         }
-        if (type != null && type.getScale() != null) {
-            int typeScale = type.getScale();
+        if (type != null) {
+            int typeScale = type.getScale() != null ? type.getScale() : 0;
             // #6111 + #6914.
             // Here is a trick. We can't set max digiter bigger than scale (otherwise long numbers are corrupted)
             Object maxFractDigits = properties.get(NumberFormatSample.PROP_MAX_FRACT_DIGITS);
@@ -132,7 +133,14 @@ public class NumberDataFormatter implements DBDDataFormatter {
         if (value == null) {
             return null;
         }
-        if (nativeSpecialValues && (CommonUtils.isNaN(value) || CommonUtils.isInfinite(value))) {
+        if (CommonUtils.isNaN(value) || CommonUtils.isInfinite(value)) {
+            if (nativeSpecialValues) {
+                return value.toString();
+            }
+        } else if (value instanceof Float || value instanceof Double) {
+            // Convert to BigDecimal so we don't have rounding issues with high minimum fraction digits set
+            value = new BigDecimal(value.toString());
+        } else if (!(value instanceof Number)) {
             return value.toString();
         }
         try {

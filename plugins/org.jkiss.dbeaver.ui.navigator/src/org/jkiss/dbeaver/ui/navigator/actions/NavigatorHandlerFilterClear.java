@@ -1,6 +1,6 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2023 DBeaver Corp and others
+ * Copyright (C) 2010-2026 DBeaver Corp and others
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,34 +21,60 @@ import org.eclipse.core.commands.ExecutionEvent;
 import org.eclipse.core.commands.ExecutionException;
 import org.eclipse.jface.viewers.ISelection;
 import org.eclipse.ui.handlers.HandlerUtil;
-import org.jkiss.dbeaver.model.navigator.DBNDatabaseFolder;
+import org.jkiss.code.NotNull;
+import org.jkiss.dbeaver.DBException;
+import org.jkiss.dbeaver.Log;
 import org.jkiss.dbeaver.model.navigator.DBNDatabaseItem;
+import org.jkiss.dbeaver.model.navigator.DBNDatabaseNode;
 import org.jkiss.dbeaver.model.navigator.DBNNode;
+import org.jkiss.dbeaver.model.navigator.DBNUtils;
 import org.jkiss.dbeaver.model.navigator.meta.DBXTreeItem;
 import org.jkiss.dbeaver.model.struct.DBSObjectFilter;
+import org.jkiss.dbeaver.runtime.DBWorkbench;
+import org.jkiss.dbeaver.ui.UIUtils;
 import org.jkiss.dbeaver.ui.navigator.NavigatorUtils;
+import org.jkiss.dbeaver.ui.navigator.UIServiceFilterConfig;
 
 import java.util.Collections;
 
 public class NavigatorHandlerFilterClear extends AbstractHandler {
 
+    private static final Log log = Log.getLog(NavigatorHandlerFilterClear.class);
+
     @Override
     public Object execute(ExecutionEvent event) throws ExecutionException {
         final ISelection selection = HandlerUtil.getCurrentSelection(event);
         DBNNode node = NavigatorUtils.getSelectedNode(selection);
-        if (node instanceof DBNDatabaseItem) {
-            node = node.getParentNode();
+        DBNDatabaseNode parentNode = (DBNDatabaseNode) (node instanceof DBNDatabaseItem ? node.getParentNode() : node);
+        if (parentNode == null) {
+            return null;
         }
-        if (node instanceof DBNDatabaseFolder) {
-            final DBNDatabaseFolder folder = (DBNDatabaseFolder) node;
-            DBXTreeItem itemsMeta = folder.getItemsMeta();
+        try {
+            DBXTreeItem itemsMeta = UIUtils.runWithMonitor(monitor -> DBNUtils.getValidItemsMeta(monitor, parentNode));
             if (itemsMeta != null) {
-                folder.setNodeFilter(itemsMeta, new DBSObjectFilter());
-                NavigatorHandlerRefresh.refreshNavigator(Collections.singleton(folder));
+                DBSObjectFilter emptyFilter = new DBSObjectFilter();
+                UIServiceFilterConfig uiServiceFilterConfig = DBWorkbench.findService(UIServiceFilterConfig.class);
+                if (uiServiceFilterConfig == null) {
+                    parentNode.setNodeFilter(itemsMeta, emptyFilter, true);
+                    NavigatorHandlerRefresh.refreshNavigator(Collections.singleton(parentNode));
+                } else {
+                    if (isUserObjectFilter(parentNode, itemsMeta)) {
+                        uiServiceFilterConfig.removeUserFilter(parentNode, itemsMeta);
+                    } else {
+                        uiServiceFilterConfig.setParentNodeFilter(parentNode, itemsMeta, emptyFilter);
+                    }
+                }
             }
-
+        } catch (DBException e) {
+            log.error(e);
         }
+
         return null;
+    }
+
+    private boolean isUserObjectFilter(@NotNull DBNDatabaseNode parentNode, @NotNull DBXTreeItem itemsMeta) {
+        DBSObjectFilter foundFilter = parentNode.getNodeFilter(itemsMeta, true);
+        return foundFilter != null && foundFilter.isUserFilter();
     }
 
 }

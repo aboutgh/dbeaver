@@ -1,6 +1,6 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2023 DBeaver Corp and others
+ * Copyright (C) 2010-2026 DBeaver Corp and others
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,10 +21,11 @@ import org.eclipse.jface.dialogs.IDialogConstants;
 import org.eclipse.jface.dialogs.IDialogSettings;
 import org.eclipse.jface.viewers.*;
 import org.eclipse.swt.SWT;
+import org.eclipse.swt.custom.CTabFolder;
+import org.eclipse.swt.custom.CTabItem;
 import org.eclipse.swt.events.SelectionAdapter;
 import org.eclipse.swt.events.SelectionEvent;
 import org.eclipse.swt.graphics.Image;
-import org.eclipse.swt.layout.FillLayout;
 import org.eclipse.swt.layout.GridData;
 import org.eclipse.swt.layout.GridLayout;
 import org.eclipse.swt.widgets.*;
@@ -77,7 +78,7 @@ class FilterSettingsDialog extends HelpEnabledDialog {
     private ToolItem moveUpButton;
     private ToolItem moveDownButton;
     private ToolItem moveBottomButton;
-    private Comparator<DBDAttributeBinding> activeSorter = POSITION_SORTER;
+    private final Comparator<DBDAttributeBinding> activeSorter = POSITION_SORTER;
     private FilterSettingsTreeEditor treeEditor;
 
     FilterSettingsDialog(ResultSetViewer resultSetViewer)
@@ -107,17 +108,21 @@ class FilterSettingsDialog extends HelpEnabledDialog {
 
         Composite composite = super.createDialogArea(parent);
 
-        TabFolder tabFolder = new TabFolder(composite, SWT.NONE);
-        tabFolder.setLayoutData(new GridData(GridData.FILL_BOTH));
+        CTabFolder tabFolder = new CTabFolder(composite, SWT.NONE);
+        GridData gd = new GridData(GridData.FILL_BOTH);
+        gd.minimumWidth = 200;
+        gd.widthHint = 400;
+        tabFolder.setLayoutData(gd);
 
         {
-            Composite columnsGroup = UIUtils.createPlaceholder(tabFolder, 1);
+            Composite columnsGroup = UIUtils.createComposite(tabFolder, 1);
+            columnsGroup.setLayoutData(new GridData(GridData.FILL_HORIZONTAL));
 
             new FilteredTree(columnsGroup, SWT.MULTI | SWT.FULL_SELECTION, new NamedObjectPatternFilter(), true, false) {
                 @Override
                 protected TreeViewer doCreateTreeViewer(Composite parent, int style) {
                     columnsViewer = new TreeViewer(parent, style);
-                    columnsController = new ViewerColumnController<>(getClass().getSimpleName(), columnsViewer);
+                    columnsController = new ViewerColumnController<>(FilterSettingsDialog.class.getSimpleName(), columnsViewer);
                     return columnsViewer;
                 }
             };
@@ -174,7 +179,7 @@ class FilterSettingsDialog extends HelpEnabledDialog {
             columnsController.addBooleanColumn(ResultSetMessages.controls_resultset_filter_column_pinned, null, SWT.LEFT, true, false, item -> {
                 final DBDAttributeBinding binding = (DBDAttributeBinding) item;
                 final DBDAttributeConstraint constraint = getBindingConstraint(binding);
-                return constraint.hasOption(SpreadsheetPresentation.ATTR_OPTION_PINNED);
+                return constraint.hasOption(DBDAttributeConstraintBase.ATTR_OPTION_PINNED);
             }, new EditingSupport(columnsViewer) {
                 @Override
                 protected CellEditor getCellEditor(Object element) {
@@ -191,7 +196,7 @@ class FilterSettingsDialog extends HelpEnabledDialog {
                 protected Object getValue(Object element) {
                     final DBDAttributeBinding binding = (DBDAttributeBinding) element;
                     final DBDAttributeConstraint constraint = getBindingConstraint(binding);
-                    return constraint.hasOption(SpreadsheetPresentation.ATTR_OPTION_PINNED);
+                    return constraint.hasOption(DBDAttributeConstraintBase.ATTR_OPTION_PINNED);
                 }
 
                 @Override
@@ -199,9 +204,9 @@ class FilterSettingsDialog extends HelpEnabledDialog {
                     final DBDAttributeBinding binding = (DBDAttributeBinding) element;
                     final DBDAttributeConstraint constraint = getBindingConstraint(binding);
                     if (CommonUtils.getBoolean(value, false)) {
-                        constraint.setOption(SpreadsheetPresentation.ATTR_OPTION_PINNED, SpreadsheetPresentation.getNextPinIndex(dataFilter));
+                        constraint.setOption(DBDAttributeConstraintBase.ATTR_OPTION_PINNED, SpreadsheetPresentation.getNextPinIndex(dataFilter));
                     } else {
-                        constraint.removeOption(SpreadsheetPresentation.ATTR_OPTION_PINNED);
+                        constraint.removeOption(DBDAttributeConstraintBase.ATTR_OPTION_PINNED);
                     }
                 }
             });
@@ -259,7 +264,7 @@ class FilterSettingsDialog extends HelpEnabledDialog {
             });
 
             final Tree columnsTree = columnsViewer.getTree();
-            GridData gd = new GridData(GridData.FILL_BOTH);
+            gd = new GridData(GridData.FILL_BOTH);
             gd.heightHint = 300;
             columnsTree.setLayoutData(gd);
             columnsTree.setHeaderVisible(true);
@@ -268,11 +273,9 @@ class FilterSettingsDialog extends HelpEnabledDialog {
             treeEditor = new FilterSettingsTreeEditor(columnsTree);
 
             {
-                ToolBar toolbar = new ToolBar(columnsGroup, SWT.HORIZONTAL | SWT.RIGHT);
-                gd = new GridData(GridData.FILL_HORIZONTAL);
-                gd.verticalIndent = 3;
-                toolbar.setLayoutData(gd);
-                toolbar.setLayout(new FillLayout());
+                Composite tph = UIUtils.createComposite(columnsGroup, 1);
+                ToolBar toolbar = new ToolBar(tph, SWT.HORIZONTAL | SWT.FLAT);
+                toolbar.setLayoutData(new GridData(GridData.FILL_HORIZONTAL));
                 moveTopButton = createToolItem(toolbar, ResultSetMessages.dialog_toolbar_move_to_top, UIIcon.ARROW_TOP, () -> {
                     moveSelectedItems(false, false);
                 });
@@ -324,7 +327,7 @@ class FilterSettingsDialog extends HelpEnabledDialog {
                 columnsViewer.addSelectionChangedListener(event -> updateButtons());
 
             }
-            TabItem libsTab = new TabItem(tabFolder, SWT.NONE);
+            CTabItem libsTab = new CTabItem(tabFolder, SWT.NONE);
             libsTab.setText(ResultSetMessages.controls_resultset_filter_group_columns);
             libsTab.setToolTipText(ResultSetMessages.controls_resultset_filter_group_columns_tooltip_text);
             libsTab.setControl(columnsGroup);
@@ -337,7 +340,10 @@ class FilterSettingsDialog extends HelpEnabledDialog {
         refreshData();
 
         // Pack UI
-        UIUtils.asyncExec(() -> UIUtils.packColumns(columnsViewer.getTree(), true, new float[] { 0.45f, 0.05f, 0.05f, 0.05f, 0.05f, 0.35f}));
+        UIUtils.asyncExec(() -> {
+            UIUtils.resizeShell(getShell());
+            UIUtils.packColumns(columnsViewer.getTree(), true, new float[] { 0.45f, 0.05f, 0.05f, 0.05f, 0.05f, 0.35f});
+        });
         //UIUtils.packColumns(filterViewer.getTable());
 
         if (!resultSetViewer.supportsDataFilter()) {
@@ -417,7 +423,7 @@ class FilterSettingsDialog extends HelpEnabledDialog {
         moveBottomButton.setEnabled(newIndex < getItemsCount() - 1);
     }
 
-    private void createCustomFilters(TabFolder tabFolder)
+    private void createCustomFilters(CTabFolder tabFolder)
     {
         Composite filterGroup = new Composite(tabFolder, SWT.NONE);
         filterGroup.setLayoutData(new GridData(GridData.FILL_BOTH));
@@ -442,7 +448,7 @@ class FilterSettingsDialog extends HelpEnabledDialog {
             ControlEnableState.disable(filterGroup);
         }
 
-        TabItem libsTab = new TabItem(tabFolder, SWT.NONE);
+        CTabItem libsTab = new CTabItem(tabFolder, SWT.NONE);
         libsTab.setText(ResultSetMessages.controls_resultset_filter_group_custom);
         libsTab.setToolTipText(ResultSetMessages.controls_resultset_filter_group_custom_tooltip_text);
         libsTab.setControl(filterGroup);

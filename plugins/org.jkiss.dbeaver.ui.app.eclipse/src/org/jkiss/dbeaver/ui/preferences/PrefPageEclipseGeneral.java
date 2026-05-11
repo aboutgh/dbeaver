@@ -1,6 +1,6 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2023 DBeaver Corp and others
+ * Copyright (C) 2010-2026 DBeaver Corp and others
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,12 +21,10 @@ import org.eclipse.swt.SWT;
 import org.eclipse.swt.layout.GridData;
 import org.eclipse.swt.widgets.Composite;
 import org.eclipse.swt.widgets.Control;
-import org.eclipse.swt.widgets.Group;
 import org.eclipse.swt.widgets.Label;
 import org.eclipse.ui.IWorkbench;
 import org.eclipse.ui.IWorkbenchPreferencePage;
 import org.eclipse.ui.IWorkbenchPropertyPage;
-import org.eclipse.ui.dialogs.PreferenceLinkArea;
 import org.eclipse.ui.preferences.IWorkbenchPreferenceContainer;
 import org.jkiss.code.NotNull;
 import org.jkiss.dbeaver.core.CoreMessages;
@@ -48,7 +46,12 @@ public class PrefPageEclipseGeneral extends AbstractPrefPage implements IWorkben
     protected Control createPreferenceContent(@NotNull Composite parent) {
         Composite composite = UIUtils.createPlaceholder(parent, 1, 5);
 
-        Group groupObjects = UIUtils.createControlGroup(composite, CoreMessages.pref_page_eclipse_ui_general_group_general, 1, GridData.VERTICAL_ALIGN_BEGINNING, 0);
+        Composite groupObjects = UIUtils.createTitledComposite(
+            composite,
+            CoreMessages.pref_page_eclipse_ui_general_group_general,
+            1,
+            GridData.VERTICAL_ALIGN_BEGINNING
+        );
         Label descLabel = new Label(groupObjects, SWT.WRAP);
         descLabel.setText(CoreMessages.pref_page_eclipse_ui_general_group_label);
 
@@ -81,9 +84,14 @@ public class PrefPageEclipseGeneral extends AbstractPrefPage implements IWorkben
     }
 
     private void addLinkToSettings(Composite composite, String pageID) {
-        new PreferenceLinkArea(composite, SWT.NONE,
-                pageID,
+        if (getContainer() instanceof IWorkbenchPreferenceContainer wpc) {
+            UIUtils.createPreferenceLink(
+                composite,
                 "<a>''{0}''</a> " + CoreMessages.pref_page_ui_general_label_settings,
-                (IWorkbenchPreferenceContainer) getContainer(), null); //$NON-NLS-1$
+                pageID,
+                wpc,
+                null
+            );
+        }
     }
 }

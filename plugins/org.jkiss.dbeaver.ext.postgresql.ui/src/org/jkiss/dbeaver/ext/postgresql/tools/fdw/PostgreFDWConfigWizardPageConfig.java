@@ -1,6 +1,6 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2023 DBeaver Corp and others
+ * Copyright (C) 2010-2026 DBeaver Corp and others
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -99,17 +99,13 @@ class PostgreFDWConfigWizardPageConfig extends ActiveWizardPage<PostgreFDWConfig
                 }
             });
             UIUtils.createEmptyLabel(fdwGroup, 1, 1);
-            UIUtils.createLink(fdwGroup, "If you don't see right data wrapper in the list then try to <a>install it</a>", new SelectionAdapter() {
-                @Override
-                public void widgetSelected(SelectionEvent e) {
-                }
-            });
+            UIUtils.createInfoLabel(fdwGroup, "If you don't see right data wrapper in the list, install it on the server first.");
         }
 
         SashForm sashForm = new SashForm(composite, SWT.HORIZONTAL);
         sashForm.setLayoutData(new GridData(GridData.FILL_BOTH));
         {
-            Group settingsGroup = UIUtils.createControlGroup(sashForm, "Settings", 2, GridData.FILL_BOTH, 0);
+            Composite settingsGroup = UIUtils.createTitledComposite(sashForm, "Settings", 2, GridData.FILL_BOTH);
 
             fdwServerText = UIUtils.createLabelText(settingsGroup, "Server ID", "", SWT.BORDER);
             fdwServerText.addModifyListener(e -> getWizard().setFdwServerId(fdwServerText.getText()));
@@ -132,7 +128,7 @@ class PostgreFDWConfigWizardPageConfig extends ActiveWizardPage<PostgreFDWConfig
             propsEditor.getControl().setLayoutData(gd);
         }
         {
-            Group tablesGroup = UIUtils.createControlGroup(sashForm, "Tables", 2, GridData.FILL_BOTH, 0);
+            Composite tablesGroup = UIUtils.createTitledComposite(sashForm, "Tables", 2, GridData.FILL_BOTH);
 
             targetDataSourceText = UIUtils.createLabelText(tablesGroup, "Data source", "", SWT.BORDER | SWT.READ_ONLY);
             targetDriverText = UIUtils.createLabelText(tablesGroup, "Driver", "", SWT.BORDER | SWT.READ_ONLY);

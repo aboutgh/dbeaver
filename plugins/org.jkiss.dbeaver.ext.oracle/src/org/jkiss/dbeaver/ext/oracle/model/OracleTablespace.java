@@ -1,6 +1,6 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2023 DBeaver Corp and others
+ * Copyright (C) 2010-2026 DBeaver Corp and others
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,9 +18,12 @@ package org.jkiss.dbeaver.ext.oracle.model;
 
 import org.jkiss.code.NotNull;
 import org.jkiss.code.Nullable;
+import org.jkiss.dbeaver.DBDatabaseException;
 import org.jkiss.dbeaver.DBException;
+import org.jkiss.dbeaver.Log;
 import org.jkiss.dbeaver.model.DBPObjectStatistics;
 import org.jkiss.dbeaver.model.DBPRefreshableObject;
+import org.jkiss.dbeaver.model.DBPScriptObject;
 import org.jkiss.dbeaver.model.DBUtils;
 import org.jkiss.dbeaver.model.exec.jdbc.JDBCPreparedStatement;
 import org.jkiss.dbeaver.model.exec.jdbc.JDBCResultSet;
@@ -31,7 +34,6 @@ import org.jkiss.dbeaver.model.impl.jdbc.cache.JDBCObjectCache;
 import org.jkiss.dbeaver.model.meta.Association;
 import org.jkiss.dbeaver.model.meta.IPropertyCacheValidator;
 import org.jkiss.dbeaver.model.meta.Property;
-import org.jkiss.dbeaver.model.preferences.DBPPropertySource;
 import org.jkiss.dbeaver.model.runtime.DBRProgressMonitor;
 import org.jkiss.dbeaver.model.struct.DBSObject;
 import org.jkiss.dbeaver.model.struct.DBSObjectLazy;
@@ -41,12 +43,15 @@ import org.jkiss.utils.CommonUtils;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.Collection;
+import java.util.Map;
 
 /**
  * Oracle tablespace
  */
-public class OracleTablespace extends OracleGlobalObject implements DBPRefreshableObject, DBPObjectStatistics
+public class OracleTablespace extends OracleGlobalObject implements DBPRefreshableObject, DBPObjectStatistics, DBPScriptObject
 {
+
+    private static final Log log = Log.getLog(OracleTablespace.class);
 
     public enum Status {
         ONLINE,
@@ -109,8 +114,9 @@ public class OracleTablespace extends OracleGlobalObject implements DBPRefreshab
     private volatile Long availableSize;
     private volatile Long usedSize;
 
-    final FileCache fileCache = new FileCache();
-    final SegmentCache segmentCache = new SegmentCache();
+    private final FileCache fileCache = new FileCache();
+    private final SegmentCache segmentCache = new SegmentCache();
+    private String ddlStringHolder = null;
 
     protected OracleTablespace(OracleDataSource dataSource, ResultSet dbResult)
     {
@@ -303,6 +309,7 @@ public class OracleTablespace extends OracleGlobalObject implements DBPRefreshab
     {
         availableSize = null;
         usedSize = null;
+        ddlStringHolder = null;
         fileCache.clearCache();
         segmentCache.clearCache();
         getDataSource().resetStatistics();
@@ -322,12 +329,6 @@ public class OracleTablespace extends OracleGlobalObject implements DBPRefreshab
         return usedSize == null ? 0 : usedSize;
     }
 
-    @Nullable
-    @Override
-    public DBPPropertySource getStatProperties() {
-        return null;
-    }
-
     private void loadSizes(DBRProgressMonitor monitor) throws DBException {
         try (final JDBCSession session = DBUtils.openMetaSession(monitor, this, "Load tablespace '" + getName() + "' statistics")) {
             try (JDBCPreparedStatement dbStat = session.prepareStatement("SELECT * FROM\n" +
@@ -342,7 +343,7 @@ public class OracleTablespace extends OracleGlobalObject implements DBPRefreshab
                 }
             }
         } catch (SQLException e) {
-            throw new DBException("Can't read tablespace statistics", e, getDataSource());
+            throw new DBDatabaseException("Can't read tablespace statistics", e, getDataSource());
         }
     }
 
@@ -403,7 +404,7 @@ public class OracleTablespace extends OracleGlobalObject implements DBPRefreshab
 
     public static class TablespaceReferenceValidator implements IPropertyCacheValidator<DBSObjectLazy<OracleDataSource>> {
         @Override
-        public boolean isPropertyCached(DBSObjectLazy<OracleDataSource> object, Object propertyId)
+        public boolean isPropertyCached(@NotNull DBSObjectLazy<OracleDataSource> object, @NotNull Object propertyId)
         {
             return
                 object.getLazyReference(propertyId) instanceof OracleTablespace ||
@@ -411,6 +412,39 @@ public class OracleTablespace extends OracleGlobalObject implements DBPRefreshab
                 object.getDataSource().tablespaceCache.isFullyCached() ||
                 !object.getDataSource().isAdmin();
         }
+    }
+
+    @NotNull
+    @Override
+    public String getObjectDefinitionText(@NotNull DBRProgressMonitor monitor, @NotNull Map<String, Object> options) throws DBException {
+
+        if (ddlStringHolder != null) {
+            return ddlStringHolder;
+        }
+        String objectType = "TABLESPACE";
+        String objectName = getName();
+        String ddl = null;
+        try (final JDBCSession session = DBUtils.openMetaSession(monitor, this, "Load source code for " + objectType + " '" + objectName + "'")) {
+            if (this.getDataSource().isAtLeastV9()) {
+                try {
+                    JDBCUtils.executeProcedure(
+                        session,
+                        "begin\n" +
+                            "DBMS_METADATA.SET_TRANSFORM_PARAM(DBMS_METADATA.SESSION_TRANSFORM,'SQLTERMINATOR',true);\n" +
+                            "end;");
+                } catch (SQLException e) {
+                    log.error("Can't apply DDL transform parameters", e);
+                }
+            }
+            ddl = OracleUtils.fetchDDL(session, objectType, objectName);
+        } catch (SQLException e) {
+            log.error("Can't fetch DDL for " + objectType + ":" + objectName, e);
+        }
+        if (ddl == null) {
+            ddl = "-- EMPTY DDL";
+        }
+        ddlStringHolder = ddl.trim();
+        return ddlStringHolder;
     }
 
 }

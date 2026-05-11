@@ -1,6 +1,6 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2023 DBeaver Corp and others
+ * Copyright (C) 2010-2026 DBeaver Corp and others
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,43 +30,30 @@ import org.eclipse.ui.PlatformUI;
 import org.eclipse.ui.handlers.HandlerUtil;
 import org.jkiss.code.NotNull;
 import org.jkiss.code.Nullable;
-import org.jkiss.dbeaver.Log;
-import org.jkiss.dbeaver.runtime.DBWorkbench;
 import org.jkiss.dbeaver.ui.UIUtils;
+import org.jkiss.dbeaver.ui.app.standalone.DBeaverApplication;
 import org.jkiss.dbeaver.ui.app.standalone.internal.CoreApplicationMessages;
 import org.jkiss.dbeaver.ui.dialogs.BaseDialog;
 
-import java.io.IOException;
-import java.nio.file.FileVisitResult;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.SimpleFileVisitor;
-import java.nio.file.attribute.BasicFileAttributes;
 import java.util.HashSet;
 import java.util.Set;
-import java.util.function.Predicate;
 
 public class ResetSettingsHandler extends AbstractHandler {
-    private static final Log log = Log.getLog(ResetSettingsHandler.class);
+    private static final Option RESET_USER_PREFERENCES = new Option(
+        CoreApplicationMessages.reset_settings_option_user_preferences_name,
+        CoreApplicationMessages.reset_settings_option_user_preferences_description,
+        true
+    );
 
-    private static final String PLUGINS_FOLDER = ".plugins";
-    private static final String CORE_RESOURCES_PLUGIN = "org.eclipse.core.resources";
+    private static final Option RESET_WORKSPACE_CONFIGURATION = new Option(
+        CoreApplicationMessages.reset_settings_option_workspace_configuration_name,
+        CoreApplicationMessages.reset_settings_option_workspace_configuration_description,
+        false
+    );
 
     private static final Option[] OPTIONS = {
-        new Option(
-            "user_preferences",
-            CoreApplicationMessages.reset_settings_option_user_preferences_name,
-            CoreApplicationMessages.reset_settings_option_user_preferences_description,
-            true,
-            path -> !path.startsWith(CORE_RESOURCES_PLUGIN)
-        ),
-        new Option(
-            "workspace_configuration",
-            CoreApplicationMessages.reset_settings_option_workspace_configuration_name,
-            CoreApplicationMessages.reset_settings_option_workspace_configuration_description,
-            false,
-            path -> path.startsWith(CORE_RESOURCES_PLUGIN)
-        )
+        RESET_USER_PREFERENCES,
+        RESET_WORKSPACE_CONFIGURATION
     };
 
     @Override
@@ -77,94 +64,44 @@ public class ResetSettingsHandler extends AbstractHandler {
             return null;
         }
 
-        final Set<String> options = dialog.options;
+        final Set<Option> options = dialog.options;
         final IWorkbench workbench = PlatformUI.getWorkbench();
 
         if (workbench.restart()) {
-            final Path path = DBWorkbench.getPlatform().getWorkspace().getMetadataFolder().resolve(PLUGINS_FOLDER);
-
-            if (Files.notExists(path) || !Files.isDirectory(path)) {
-                return null;
-            }
-
-            Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-                try {
-                    Files.walkFileTree(path, new SimpleFileVisitor<>() {
-                        @Override
-                        public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) {
-                            log.trace("Deleting " + file);
-
-                            try {
-                                Files.delete(file);
-                            } catch (IOException e) {
-                                log.trace("Unable to delete " + file + ":" + e.getMessage());
-                            }
-
-                            return FileVisitResult.CONTINUE;
-                        }
-
-                        @Override
-                        public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) {
-                            if (dir.endsWith(PLUGINS_FOLDER)) {
-                                return FileVisitResult.CONTINUE;
-                            }
-
-                            for (Option option : OPTIONS) {
-                                if (options.contains(option.id) && option.predicate.test(path.relativize(dir))) {
-                                    return FileVisitResult.CONTINUE;
-                                }
-                            }
-
-                            return FileVisitResult.SKIP_SUBTREE;
-                        }
-
-                        @Override
-                        public FileVisitResult postVisitDirectory(Path dir, IOException exc) {
-                            log.trace("Deleting " + dir);
-
-                            try {
-                                Files.delete(dir);
-                            } catch (IOException e) {
-                                log.trace("Unable to delete " + dir + ":" + e.getMessage());
-                            }
-
-                            return FileVisitResult.CONTINUE;
-                        }
-                    });
-                } catch (IOException e) {
-                    log.error("Error walking plugin settings", e);
-                }
-            }));
+            final DBeaverApplication instance = DBeaverApplication.getInstance();
+            instance.setResetUserPreferencesOnRestart(options.contains(RESET_USER_PREFERENCES));
+            instance.setResetWorkspaceConfigurationOnRestart(options.contains(RESET_WORKSPACE_CONFIGURATION));
         }
 
         return null;
     }
 
     private static class ResetSettingsDialog extends BaseDialog {
-        private final Set<String> options = new HashSet<>();
+        private final Set<Option> options = new HashSet<>();
 
         public ResetSettingsDialog(@NotNull Shell shell) {
             super(shell, CoreApplicationMessages.reset_settings_dialog_title, null);
             setShellStyle(SWT.DIALOG_TRIM);
         }
 
+        @NotNull
         @Override
-        protected Composite createDialogArea(Composite parent) {
+        protected Composite createDialogArea(@NotNull Composite parent) {
             final Composite composite = super.createDialogArea(parent);
 
             UIUtils.createLabel(composite, CoreApplicationMessages.reset_settings_dialog_message);
 
-            final Group group = UIUtils.createControlGroup(
-                composite, CoreApplicationMessages.reset_settings_dialog_options, 1, GridData.FILL_BOTH, 0);
+            Composite group = UIUtils.createTitledComposite(
+                composite, CoreApplicationMessages.reset_settings_dialog_options, 1, GridData.FILL_BOTH);
 
             final SelectionListener listener = SelectionListener.widgetSelectedAdapter(e -> {
                 final Button checkbox = (Button) e.widget;
                 final Option option = (Option) checkbox.getData();
 
                 if (checkbox.getSelection()) {
-                    options.add(option.id);
+                    options.add(option);
                 } else {
-                    options.remove(option.id);
+                    options.remove(option);
                 }
 
                 UIUtils.asyncExec(() -> {
@@ -192,7 +129,7 @@ public class ResetSettingsHandler extends AbstractHandler {
         }
 
         @Override
-        protected void createButtonsForButtonBar(Composite parent) {
+        protected void createButtonsForButtonBar(@NotNull Composite parent) {
             createButton(parent, IDialogConstants.OK_ID, CoreApplicationMessages.button_apply_and_restart, true)
                 .setEnabled(false);
             createButton(parent, IDialogConstants.CANCEL_ID, IDialogConstants.CANCEL_LABEL, false);
@@ -213,19 +150,10 @@ public class ResetSettingsHandler extends AbstractHandler {
         }
     }
 
-    private static class Option {
-        private final String id;
-        private final String name;
-        private final String description;
-        private final boolean checked;
-        private final Predicate<Path> predicate;
-
-        public Option(@NotNull String id, @NotNull String name, @Nullable String description, boolean checked, @NotNull Predicate<Path> predicate) {
-            this.id = id;
-            this.name = name;
-            this.description = description;
-            this.checked = checked;
-            this.predicate = predicate;
-        }
+    private record Option(
+        @NotNull String name,
+        @Nullable String description,
+        boolean checked
+    ) {
     }
 }

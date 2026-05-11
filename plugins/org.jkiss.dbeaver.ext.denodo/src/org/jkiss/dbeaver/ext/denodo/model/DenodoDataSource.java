@@ -1,6 +1,6 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2023 DBeaver Corp and others
+ * Copyright (C) 2010-2026 DBeaver Corp and others
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,31 +16,28 @@
  */
 package org.jkiss.dbeaver.ext.denodo.model;
 
+import org.jkiss.code.NotNull;
 import org.jkiss.dbeaver.DBException;
 import org.jkiss.dbeaver.ext.generic.model.GenericDataSource;
 import org.jkiss.dbeaver.model.DBPDataSourceContainer;
-import org.jkiss.dbeaver.model.connection.DBPConnectionConfiguration;
-import org.jkiss.dbeaver.model.connection.DBPDriver;
-import org.jkiss.dbeaver.model.exec.DBCException;
-import org.jkiss.dbeaver.model.impl.jdbc.JDBCExecutionContext;
 import org.jkiss.dbeaver.model.runtime.DBRProgressMonitor;
+import org.jkiss.dbeaver.model.struct.DBSObject;
 
-import java.util.HashMap;
-import java.util.Map;
 
 public class DenodoDataSource extends GenericDataSource {
 
-    public DenodoDataSource(DBRProgressMonitor monitor, DBPDataSourceContainer container, DenodoMetaModel metaModel)
-        throws DBException
-    {
+    public DenodoDataSource(
+        @NotNull DBRProgressMonitor monitor,
+        @NotNull DBPDataSourceContainer container,
+        @NotNull  DenodoMetaModel metaModel
+    ) throws DBException {
         super(monitor, container, metaModel, new DenodoSQLDialect());
     }
 
     @Override
-    protected Map<String, String> getInternalConnectionProperties(DBRProgressMonitor monitor, DBPDriver driver, JDBCExecutionContext context, String purpose, DBPConnectionConfiguration connectionInfo) throws DBCException {
-        Map<String, String> props = new HashMap<>();
-
-        return props;
+    public DBSObject refreshObject(@NotNull DBRProgressMonitor monitor) throws DBException {
+        this.getDataTypeCache().clearCache();
+        return super.refreshObject(monitor);
     }
 
     @Override

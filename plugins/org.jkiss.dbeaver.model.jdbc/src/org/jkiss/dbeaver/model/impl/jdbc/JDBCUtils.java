@@ -1,6 +1,6 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2023 DBeaver Corp and others
+ * Copyright (C) 2010-2026 DBeaver Corp and others
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,17 +22,21 @@ import org.jkiss.dbeaver.Log;
 import org.jkiss.dbeaver.ModelPreferences;
 import org.jkiss.dbeaver.model.*;
 import org.jkiss.dbeaver.model.exec.DBCException;
+import org.jkiss.dbeaver.model.exec.DBExecUtils;
 import org.jkiss.dbeaver.model.exec.jdbc.JDBCResultSet;
 import org.jkiss.dbeaver.model.exec.jdbc.JDBCSession;
 import org.jkiss.dbeaver.model.exec.jdbc.JDBCStatement;
 import org.jkiss.dbeaver.model.runtime.DBRProgressMonitor;
 import org.jkiss.dbeaver.model.sql.SQLDialect;
+import org.jkiss.dbeaver.model.sql.SQLState;
 import org.jkiss.dbeaver.model.sql.SQLUtils;
 import org.jkiss.dbeaver.model.struct.DBSObject;
 import org.jkiss.dbeaver.model.struct.DBSObjectFilter;
 import org.jkiss.dbeaver.model.struct.rdb.DBSForeignKeyModifyRule;
 import org.jkiss.dbeaver.utils.RuntimeUtils;
+import org.jkiss.utils.ArrayUtils;
 import org.jkiss.utils.CommonUtils;
+import org.jkiss.utils.StringUtils;
 
 import java.lang.reflect.InvocationTargetException;
 import java.math.BigDecimal;
@@ -46,6 +50,8 @@ import java.util.Map;
  * JDBCUtils
  */
 public class JDBCUtils {
+    public static boolean LOG_JDBC_WARNINGS = CommonUtils.toBoolean(System.getProperty("dbeaver.jdbc.log.warnings"));
+
     private static final Log log = Log.getLog(JDBCUtils.class);
 
     private static final Map<String, Integer> badColumnNames = new HashMap<>();
@@ -100,7 +106,6 @@ public class JDBCUtils {
         }
     }
 
-    @Nullable
     public static void setStringOrNull(PreparedStatement dbStat, int columnIndex, String value) throws SQLException {
         if (value != null) {
             dbStat.setString(columnIndex, value);
@@ -526,37 +531,25 @@ public class JDBCUtils {
     }
 
     public static DBSForeignKeyModifyRule getCascadeFromNum(int num) {
-        switch (num) {
-            case DatabaseMetaData.importedKeyNoAction:
-                return DBSForeignKeyModifyRule.NO_ACTION;
-            case DatabaseMetaData.importedKeyCascade:
-                return DBSForeignKeyModifyRule.CASCADE;
-            case DatabaseMetaData.importedKeySetNull:
-                return DBSForeignKeyModifyRule.SET_NULL;
-            case DatabaseMetaData.importedKeySetDefault:
-                return DBSForeignKeyModifyRule.SET_DEFAULT;
-            case DatabaseMetaData.importedKeyRestrict:
-                return DBSForeignKeyModifyRule.RESTRICT;
-            default:
-                return DBSForeignKeyModifyRule.UNKNOWN;
-        }
+        return switch (num) {
+            case DatabaseMetaData.importedKeyNoAction -> DBSForeignKeyModifyRule.NO_ACTION;
+            case DatabaseMetaData.importedKeyCascade -> DBSForeignKeyModifyRule.CASCADE;
+            case DatabaseMetaData.importedKeySetNull -> DBSForeignKeyModifyRule.SET_NULL;
+            case DatabaseMetaData.importedKeySetDefault -> DBSForeignKeyModifyRule.SET_DEFAULT;
+            case DatabaseMetaData.importedKeyRestrict -> DBSForeignKeyModifyRule.RESTRICT;
+            default -> DBSForeignKeyModifyRule.UNKNOWN;
+        };
     }
 
     public static DBSForeignKeyModifyRule getCascadeFromName(String name) {
-        switch (name) {
-            case "NO ACTION":
-                return DBSForeignKeyModifyRule.NO_ACTION;
-            case "CASCADE":
-                return DBSForeignKeyModifyRule.CASCADE;
-            case "SET NULL":
-                return DBSForeignKeyModifyRule.SET_NULL;
-            case "SET DEFAULT":
-                return DBSForeignKeyModifyRule.SET_DEFAULT;
-            case "RESTRICT":
-                return DBSForeignKeyModifyRule.RESTRICT;
-            default:
-                return DBSForeignKeyModifyRule.UNKNOWN;
-        }
+        return switch (name) {
+            case "NO ACTION" -> DBSForeignKeyModifyRule.NO_ACTION;
+            case "CASCADE" -> DBSForeignKeyModifyRule.CASCADE;
+            case "SET NULL" -> DBSForeignKeyModifyRule.SET_NULL;
+            case "SET DEFAULT" -> DBSForeignKeyModifyRule.SET_DEFAULT;
+            case "RESTRICT" -> DBSForeignKeyModifyRule.RESTRICT;
+            default -> DBSForeignKeyModifyRule.UNKNOWN;
+        };
     }
 
     public static void executeSQL(Connection session, String sql, Object... params) throws SQLException {
@@ -824,8 +817,8 @@ public class JDBCUtils {
         return null;
     }
 
-    public static long executeInsertAutoIncrement(Connection session, String sql, Object... params) throws SQLException {
-        try (PreparedStatement dbStat = session.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
+    public static long executeInsertAutoIncrement(Connection session, String sql, String columnName, Object... params) throws SQLException {
+        try (PreparedStatement dbStat = session.prepareStatement(sql, getColumnList(columnName))) {
             if (params != null) {
                 for (int i = 0; i < params.length; i++) {
                     dbStat.setObject(i + 1, params[i]);
@@ -850,5 +843,130 @@ public class JDBCUtils {
                 statement.execute(sql);
             }
         }
+    }
+
+    /**
+     * Needed for {@link Connection#prepareStatement(String, String[])}
+     * Postgres can't find column if column id is in upper case.
+     * Oracle doesn't return id of inserted row for {@link Connection#prepareStatement(String, int)}.
+     * @param columnName name of column.
+     * @return array of column name.
+     */
+    public static String[] getColumnList(@NotNull String columnName) {
+        return new String[] {columnName.toLowerCase()};
+    }
+
+    public static boolean isRollbackWarning(SQLException sqlError) {
+        return
+            SQLState.SQL_25P01.getCode().equals(sqlError.getSQLState());
+    }
+
+    /**
+     * Checks whether the given exception indicates an unsupported feature error.
+     *
+     * @param dataSource the data source involved in the operation.
+     * @param ex the exception to analyze.
+     * @return {@code true} if the exception represents an unsupported feature error;
+     *         {@code false} otherwise.
+     */
+    public static boolean isFeatureNotSupportedError(@Nullable DBPDataSource dataSource, @NotNull Throwable ex) {
+        return ex instanceof SQLFeatureNotSupportedException || (dataSource != null && DBExecUtils.discoverErrorType(dataSource, ex)
+            == DBPErrorAssistant.ErrorType.FEATURE_UNSUPPORTED);
+    }
+
+    public static int getTypeIdFromValue(@Nullable Object value) {
+        if (value instanceof Struct) {
+            return Types.STRUCT;
+        } else if (value instanceof Array || ArrayUtils.isArray(value)) {
+            return Types.ARRAY;
+        } else if (value instanceof Byte) {
+            return Types.TINYINT;
+        } else if (value instanceof Short) {
+            return Types.SMALLINT;
+        } else if (value instanceof Integer) {
+            return Types.INTEGER;
+        } else if (value instanceof Long) {
+            return Types.SMALLINT;
+        } else if (value instanceof Float) {
+            return Types.FLOAT;
+        } else if (value instanceof Double) {
+            return Types.DOUBLE;
+        } else if (value instanceof java.sql.Date) {
+            return Types.DATE;
+        } else if (value instanceof java.sql.Time) {
+            return Types.TIME;
+        } else if (value instanceof java.util.Date) {
+            return Types.TIMESTAMP;
+        } else if (value instanceof String) {
+            return Types.VARCHAR;
+        }
+
+        return Types.OTHER;
+    }
+
+    @NotNull
+    public static String getTypeNameByTypeId(int typeId) {
+        return switch (typeId) {
+            case Types.STRUCT -> "STRUCT";
+            case Types.ARRAY -> "ARRAY";
+            case Types.TINYINT -> "TINYINT";
+            case Types.INTEGER -> "INTEGER";
+            case Types.SMALLINT -> "SMALLINT";
+            case Types.FLOAT -> "FLOAT";
+            case Types.DOUBLE -> "DOUBLE";
+            case Types.DATE -> "DATE";
+            case Types.TIME -> "TIME";
+            case Types.TIMESTAMP -> "TIMESTAMP";
+            case Types.VARCHAR -> "VARCHAR";
+            default -> "VARCHAR";
+        };
+    }
+
+    @NotNull
+    public static String getTypeNameByDataKind(@NotNull DBPDataKind dataKind) {
+        return switch (dataKind) {
+            case BOOLEAN -> "BOOLEAN";
+            case NUMERIC -> "NUMERIC";
+            case STRING -> "VARCHAR";
+            case DATETIME -> "TIMESTAMP";
+            case BINARY -> "BLOB";
+            case CONTENT -> "BLOB";
+            case STRUCT -> "VARCHAR";
+            case ARRAY -> "VARCHAR";
+            case OBJECT -> "VARCHAR";
+            case REFERENCE -> "VARCHAR";
+            case ROWID -> "ROWID";
+            case ANY -> "VARCHAR";
+            default -> "VARCHAR";
+        };
+    }
+
+    @NotNull
+    public static DBPDataKind getDataKindByTypeID(int typeId, @Nullable String typeName) {
+        return switch (typeId) {
+            case Types.BOOLEAN -> DBPDataKind.BOOLEAN;
+            case Types.CHAR, Types.VARCHAR, Types.NVARCHAR, Types.LONGVARCHAR, Types.LONGNVARCHAR -> DBPDataKind.STRING;
+            case Types.BIGINT, Types.DECIMAL, Types.DOUBLE, Types.FLOAT, Types.INTEGER, Types.NUMERIC, Types.REAL, Types.SMALLINT ->
+                DBPDataKind.NUMERIC;
+            case Types.BIT, Types.TINYINT -> {
+                if (typeName != null && StringUtils.containsIgnoreCase(typeName, "bool")) {
+                    // Declared as numeric but actually it's a boolean
+                    yield DBPDataKind.BOOLEAN;
+                }
+                yield DBPDataKind.NUMERIC;
+            }
+            case Types.DATE, Types.TIME, Types.TIME_WITH_TIMEZONE, Types.TIMESTAMP, Types.TIMESTAMP_WITH_TIMEZONE -> DBPDataKind.DATETIME;
+            case Types.BINARY, Types.VARBINARY, Types.LONGVARBINARY -> DBPDataKind.BINARY;
+            case Types.BLOB, Types.CLOB, Types.NCLOB -> DBPDataKind.CONTENT;
+            case Types.SQLXML -> DBPDataKind.CONTENT;
+            case Types.STRUCT -> DBPDataKind.STRUCT;
+            case Types.ARRAY -> DBPDataKind.ARRAY;
+            case Types.ROWID -> DBPDataKind.ROWID;
+            case Types.REF -> DBPDataKind.REFERENCE;
+            case Types.OTHER ->
+                // TODO: really?
+                DBPDataKind.OBJECT;
+            default -> DBPDataKind.UNKNOWN;
+        };
     }
 }

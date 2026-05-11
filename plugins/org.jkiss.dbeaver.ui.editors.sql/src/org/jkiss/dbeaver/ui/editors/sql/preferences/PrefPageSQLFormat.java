@@ -1,7 +1,6 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2023 DBeaver Corp and others
- * Copyright (C) 2011-2012 Eugene Fradkin (eugene.fradkin@gmail.com)
+ * Copyright (C) 2010-2026 DBeaver Corp and others
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -32,6 +31,7 @@ import org.eclipse.swt.widgets.Composite;
 import org.eclipse.swt.widgets.Control;
 import org.eclipse.ui.IEditorSite;
 import org.jkiss.code.NotNull;
+import org.jkiss.code.Nullable;
 import org.jkiss.dbeaver.DBException;
 import org.jkiss.dbeaver.Log;
 import org.jkiss.dbeaver.model.DBPDataSource;
@@ -70,8 +70,7 @@ import java.util.Locale;
 /**
  * PrefPageSQLFormat
  */
-public class PrefPageSQLFormat extends TargetPrefPage
-{
+public class PrefPageSQLFormat extends TargetPrefPage {
     private static final Log log = Log.getLog(PrefPageSQLFormat.class);
 
     public static final String PAGE_ID = "org.jkiss.dbeaver.preferences.main.sql.format"; //$NON-NLS-1$
@@ -96,12 +95,10 @@ public class PrefPageSQLFormat extends TargetPrefPage
     }
 
     @Override
-    protected boolean hasDataSourceSpecificOptions(DBPDataSourceContainer dataSourceDescriptor)
-    {
+    protected boolean hasDataSourceSpecificOptions(DBPDataSourceContainer dataSourceDescriptor) {
         DBPPreferenceStore store = dataSourceDescriptor.getPreferenceStore();
         return
             store.contains(SQLPreferenceConstants.SQL_FORMAT_BOLD_KEYWORDS) ||
-
             store.contains(SQLModelPreferences.SQL_FORMAT_FORMATTER);
     }
 
@@ -114,7 +111,7 @@ public class PrefPageSQLFormat extends TargetPrefPage
     @NotNull
     @Override
     protected Control createPreferenceContent(@NotNull Composite parent) {
-        Composite composite = UIUtils.createPlaceholder(parent, 3, 5);
+        Composite composite = UIUtils.createComposite(parent, 3);
 
         formatterSelector = UIUtils.createLabelCombo(composite, SQLEditorMessages.pref_page_sql_format_label_formatter, SWT.DROP_DOWN | SWT.READ_ONLY);
         formatterSelector.setLayoutData(new GridData(GridData.HORIZONTAL_ALIGN_BEGINNING));
@@ -126,7 +123,7 @@ public class PrefPageSQLFormat extends TargetPrefPage
         formatterSelector.addSelectionListener(new SelectionAdapter() {
             @Override
             public void widgetSelected(SelectionEvent e) {
-                showFormatterSettings();
+                showFormatterSettings(true);
                 performApply();
             }
         });
@@ -140,35 +137,14 @@ public class PrefPageSQLFormat extends TargetPrefPage
             1
         );
 
-        Composite formatterGroup = UIUtils.createPlaceholder(composite, 1, 5);
+        Composite formatterGroup = UIUtils.createComposite(composite, 1);
         formatterGroup.setLayoutData(new GridData(GridData.FILL_HORIZONTAL));
         ((GridData)formatterGroup.getLayoutData()).horizontalSpan = 3;
 
-/*
-        {
-            Composite formatterPanel = UIUtils.createPlaceholder(formatterGroup, 4, 5);
-            formatterPanel.setLayoutData(new GridData(GridData.FILL_HORIZONTAL));
-
-            keywordCaseCombo = UIUtils.createLabelCombo(formatterPanel, CoreMessages.pref_page_sql_format_label_keyword_case, SWT.DROP_DOWN | SWT.READ_ONLY);
-            keywordCaseCombo.setLayoutData(new GridData(GridData.HORIZONTAL_ALIGN_BEGINNING));
-            keywordCaseCombo.add("Database");
-            for (DBPIdentifierCase c :DBPIdentifierCase.values()) {
-                keywordCaseCombo.add(DBPIdentifierCase.capitalizeCaseName(c.name()));
-            }
-            keywordCaseCombo.addSelectionListener(new SelectionAdapter() {
-                @Override
-                public void widgetSelected(SelectionEvent e) {
-                    performApply();
-                }
-            });
-        }
-*/
-
         // External formatter
         {
-            formatterConfigPlaceholder = UIUtils.createPlaceholder(formatterGroup, 2, 5);
+            formatterConfigPlaceholder = UIUtils.createComposite(formatterGroup, 1);
             formatterConfigPlaceholder.setLayoutData(new GridData(GridData.FILL_HORIZONTAL | GridData.HORIZONTAL_ALIGN_BEGINNING));
-            formatterConfigPlaceholder.setLayout(new FillLayout());
         }
 
         {
@@ -180,6 +156,7 @@ public class PrefPageSQLFormat extends TargetPrefPage
             previewGroup.setLayout(new FillLayout());
 
             sqlViewer = new SQLEditorBase() {
+                @Nullable
                 @Override
                 public DBCExecutionContext getExecutionContext() {
                     final DBPDataSourceContainer container = getDataSourceContainer();
@@ -214,8 +191,6 @@ public class PrefPageSQLFormat extends TargetPrefPage
 
             {
                 // Styles
-//            Composite afGroup = UIUtils.createControlGroup(composite, CoreMessages.pref_page_sql_format_group_style, 1, GridData.FILL_HORIZONTAL | GridData.VERTICAL_ALIGN_BEGINNING, 0);
-//            ((GridData)afGroup.getLayoutData()).horizontalSpan = 2;
                 styleBoldKeywords = UIUtils.createCheckbox(
                     composite,
                     SQLEditorMessages.pref_page_sql_format_label_bold_keywords,
@@ -236,27 +211,47 @@ public class PrefPageSQLFormat extends TargetPrefPage
     }
 
     @Override
-    protected void loadPreferences(DBPPreferenceStore store)
-    {
-        styleBoldKeywords.setSelection(store.getBoolean(SQLPreferenceConstants.SQL_FORMAT_BOLD_KEYWORDS));
-        formatCurrentQueryCheck.setSelection(store.getBoolean(SQLPreferenceConstants.SQL_FORMAT_ACTIVE_QUERY));
+    protected void loadPreferences(DBPPreferenceStore store) {
+        loadPreferences(store, false);
+    }
 
-        String formatterId = store.getString(SQLModelPreferences.SQL_FORMAT_FORMATTER);
+    @Override
+    protected void performDefaults() {
+        loadPreferences(getTargetPreferenceStore(), true);
+        super.performDefaults();
+    }
+
+    private void loadPreferences(DBPPreferenceStore store, boolean useDefaults) {
+        styleBoldKeywords.setSelection(
+            useDefaults
+                ? store.getDefaultBoolean(SQLPreferenceConstants.SQL_FORMAT_BOLD_KEYWORDS)
+                : store.getBoolean(SQLPreferenceConstants.SQL_FORMAT_BOLD_KEYWORDS)
+        );
+        formatCurrentQueryCheck.setSelection(
+            useDefaults
+                ? store.getDefaultBoolean(SQLPreferenceConstants.SQL_FORMAT_ACTIVE_QUERY)
+                : store.getBoolean(SQLPreferenceConstants.SQL_FORMAT_ACTIVE_QUERY)
+        );
+
+        String formatterId = useDefaults
+            ? store.getDefaultString(SQLModelPreferences.SQL_FORMAT_FORMATTER)
+            : store.getString(SQLModelPreferences.SQL_FORMAT_FORMATTER);
         for (int i = 0; i < formatters.size(); i++) {
             if (formatters.get(i).getId().equalsIgnoreCase(formatterId)) {
                 formatterSelector.select(i);
                 break;
             }
         }
-        if (formatterSelector.getSelectionIndex() < 0) formatterSelector.select(0);
+        if (formatterSelector.getSelectionIndex() < 0) {
+            formatterSelector.select(0);
+        }
 
+        showFormatterSettings(useDefaults);
         formatSQL();
-        showFormatterSettings();
     }
 
     @Override
-    protected void savePreferences(DBPPreferenceStore store)
-    {
+    protected void savePreferences(DBPPreferenceStore store) {
         if (curConfigurator != null) {
             curConfigurator.saveSettings(getTargetPreferenceStore());
         }
@@ -270,8 +265,7 @@ public class PrefPageSQLFormat extends TargetPrefPage
     }
 
     @Override
-    protected void clearPreferences(DBPPreferenceStore store)
-    {
+    protected void clearPreferences(DBPPreferenceStore store) {
         store.setToDefault(SQLPreferenceConstants.SQL_FORMAT_BOLD_KEYWORDS);
 
         store.setToDefault(SQLModelPreferences.SQL_FORMAT_FORMATTER);
@@ -286,14 +280,14 @@ public class PrefPageSQLFormat extends TargetPrefPage
         formatSQL();
     }
 
+    @NotNull
     @Override
-    protected String getPropertyPageID()
-    {
+    protected String getPropertyPageID() {
         return PAGE_ID;
     }
 
-    private void showFormatterSettings() {
-        if (curConfigurator != null) {
+    private void showFormatterSettings(boolean useDefaults) {
+        if (!useDefaults && curConfigurator != null) {
             curConfigurator.saveSettings(getTargetPreferenceStore());
         }
         UIUtils.disposeChildControls(formatterConfigPlaceholder);
@@ -317,7 +311,7 @@ public class PrefPageSQLFormat extends TargetPrefPage
                     formatSQL();
                 });
                 ((IDialogPage)curConfigurator).createControl(formatterConfigPlaceholder);
-                curConfigurator.loadSettings(getTargetPreferenceStore());
+                curConfigurator.loadSettings(getTargetPreferenceStore(), useDefaults);
             }
         } catch (DBException e) {
             log.error("Error creating formatter configurator", e);

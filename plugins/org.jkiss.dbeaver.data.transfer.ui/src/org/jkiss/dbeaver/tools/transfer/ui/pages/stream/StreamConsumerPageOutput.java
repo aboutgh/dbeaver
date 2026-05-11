@@ -1,6 +1,6 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2023 DBeaver Corp and others
+ * Copyright (C) 2010-2026 DBeaver Corp and others
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,9 +16,7 @@
  */
 package org.jkiss.dbeaver.tools.transfer.ui.pages.stream;
 
-import org.eclipse.jface.dialogs.IDialogConstants;
 import org.eclipse.jface.layout.GridDataFactory;
-import org.eclipse.jface.layout.GridLayoutFactory;
 import org.eclipse.osgi.util.NLS;
 import org.eclipse.swt.SWT;
 import org.eclipse.swt.events.SelectionAdapter;
@@ -30,7 +28,6 @@ import org.eclipse.ui.forms.events.ExpansionAdapter;
 import org.eclipse.ui.forms.events.ExpansionEvent;
 import org.eclipse.ui.forms.widgets.ExpandableComposite;
 import org.jkiss.code.NotNull;
-import org.jkiss.code.Nullable;
 import org.jkiss.dbeaver.Log;
 import org.jkiss.dbeaver.model.DBUtils;
 import org.jkiss.dbeaver.model.sql.SQLQueryContainer;
@@ -50,17 +47,20 @@ import org.jkiss.dbeaver.tools.transfer.stream.StreamConsumerSettings.DataFileCo
 import org.jkiss.dbeaver.tools.transfer.stream.StreamConsumerSettings.LobExtractType;
 import org.jkiss.dbeaver.tools.transfer.stream.StreamTransferConsumer;
 import org.jkiss.dbeaver.tools.transfer.ui.IDataTransferEventProcessorConfigurator;
+import org.jkiss.dbeaver.tools.transfer.ui.controls.EventProcessorComposite;
 import org.jkiss.dbeaver.tools.transfer.ui.internal.DTUIMessages;
 import org.jkiss.dbeaver.tools.transfer.ui.pages.DataTransferPageNodeSettings;
 import org.jkiss.dbeaver.tools.transfer.ui.prefs.PrefPageDataTransfer;
+import org.jkiss.dbeaver.ui.BaseThemeSettings;
 import org.jkiss.dbeaver.ui.ShellUtils;
+import org.jkiss.dbeaver.ui.UIIcon;
 import org.jkiss.dbeaver.ui.UIUtils;
 import org.jkiss.dbeaver.ui.contentassist.ContentAssistUtils;
 import org.jkiss.dbeaver.ui.contentassist.SmartTextContentAdapter;
 import org.jkiss.dbeaver.ui.contentassist.StringContentProposalProvider;
 import org.jkiss.dbeaver.ui.controls.VariablesHintLabel;
-import org.jkiss.dbeaver.ui.dialogs.BaseDialog;
 import org.jkiss.dbeaver.ui.dialogs.DialogUtils;
+import org.jkiss.dbeaver.ui.internal.UIConnectionMessages;
 import org.jkiss.dbeaver.utils.GeneralUtils;
 import org.jkiss.dbeaver.utils.HelpUtils;
 import org.jkiss.utils.CommonUtils;
@@ -74,8 +74,8 @@ import java.util.stream.Collectors;
 
 public class StreamConsumerPageOutput extends DataTransferPageNodeSettings {
     
-    private class EnumSelectionGroup<T extends Enum<T>> {
-        private final Group group; 
+    private static class EnumSelectionGroup<T extends Enum<T>> {
+        private final Composite group;
         private final Map<T, Button> radioButtonByValue;
         private final T defaultValue;
         private final Consumer<T> onValueSelected;
@@ -91,7 +91,7 @@ public class StreamConsumerPageOutput extends DataTransferPageNodeSettings {
             @NotNull Consumer<T> onValueSelected,
             @NotNull Function<T, Boolean> valueSelectionConfirmation
         ) {
-            group = UIUtils.createControlGroup(parent, header, 1, GridData.VERTICAL_ALIGN_BEGINNING, 0);
+            group = UIUtils.createTitledComposite(parent, header, 1, GridData.VERTICAL_ALIGN_BEGINNING);
             
             SelectionListener selectionListener = SelectionListener.widgetSelectedAdapter(e -> {
                 Button triggered = (Button) e.widget;
@@ -163,6 +163,7 @@ public class StreamConsumerPageOutput extends DataTransferPageNodeSettings {
     }
 
     private static final Log log = Log.getLog(StreamConsumerPageOutput.class);
+    private static final String HELP_DT_EXTERNAL_LINK = "Data-transfer-external-storage";
     
     private Combo encodingCombo;
     private Button encodingBOMCheckbox;
@@ -178,7 +179,7 @@ public class StreamConsumerPageOutput extends DataTransferPageNodeSettings {
     private EnumSelectionGroup<BlobFileConflictBehavior> blobFileConflictBehaviorSelector;
     private Label maximumFileSizeLabel;
     private Text maximumFileSizeText;
-    private final Map<String, EventProcessorComposite> processors = new HashMap<>();
+    private final Map<String, EventProcessorComposite<?>> processors = new HashMap<>();
 
     public StreamConsumerPageOutput() {
         super(DTMessages.data_transfer_wizard_output_name);
@@ -196,159 +197,102 @@ public class StreamConsumerPageOutput extends DataTransferPageNodeSettings {
         final StreamConsumerSettings settings = getWizard().getPageSettings(this, StreamConsumerSettings.class);
 
         {
-            Group generalSettings = UIUtils.createControlGroup(composite, DTMessages.data_transfer_wizard_output_group_general, 5, GridData.FILL_HORIZONTAL, 0);
-            clipboardCheck = UIUtils.createCheckbox(generalSettings, DTMessages.data_transfer_wizard_output_label_copy_to_clipboard, null, false, 5);
-            clipboardCheck.addSelectionListener(new SelectionAdapter() {
-                @Override
-                public void widgetSelected(SelectionEvent e) {
-                    settings.setOutputClipboard(clipboardCheck.getSelection());
-                    updateControlsEnablement();
-                    updatePageCompletion();
-                }
-            });
-
-            // Output path/pattern
-
-            directoryText = DialogUtils.createOutputFolderChooser(generalSettings, null, e -> {
-                settings.setOutputFolder(directoryText.getText());
-                updatePageCompletion();
-            });
-            ((GridData) directoryText.getParent().getLayoutData()).horizontalSpan = 3;
-
-            UIUtils.createLink(generalSettings, DTMessages.data_transfer_wizard_output_label_global_settings, new SelectionAdapter() {
-                @Override
-                public void widgetSelected(SelectionEvent e) {
-                    UIUtils.showPreferencesFor(getShell(), null, PrefPageDataTransfer.PAGE_ID);
-                }
-            });
-
-            UIUtils.createControlLabel(generalSettings, DTMessages.data_transfer_wizard_output_label_file_name_pattern);
-            fileNameText = new Text(generalSettings, SWT.BORDER);
-            GridData gd = new GridData(GridData.FILL_HORIZONTAL);
-            gd.horizontalSpan = 4;
-            fileNameText.setLayoutData(gd);
-            fileNameText.addModifyListener(e -> {
-                settings.setOutputFilePattern(fileNameText.getText());
-                updatePageCompletion();
-            });
+            createGeneralSettingSPanel(composite, settings);
 
             {
-                UIUtils.createControlLabel(generalSettings, DTMessages.data_transfer_wizard_output_label_encoding);
-                encodingCombo = UIUtils.createEncodingCombo(generalSettings, settings.getOutputEncoding());
+                final ExpandableComposite expander = new ExpandableComposite(composite, SWT.NONE);
+                expander.setLayoutData(new GridData(GridData.FILL, GridData.BEGINNING, false, false, 1, 1));
+                expander.addExpansionListener(new ExpansionAdapter() {
+                    @Override
+                    public void expansionStateChanged(ExpansionEvent e) {
+                        UIUtils.resizeShell(parent.getShell());
+                    }
+                });
+                expander.setText(UIConnectionMessages.dialog_connection_advanced_settings);
+                expander.setFont(BaseThemeSettings.instance.baseFontBold);
+                Composite advancedSettingPanel = UIUtils.createComposite(expander, 5);
+                expander.setClient(advancedSettingPanel);
+
+                UIUtils.createControlLabel(advancedSettingPanel, DTMessages.data_transfer_wizard_output_label_encoding);
+                encodingCombo = UIUtils.createEncodingCombo(advancedSettingPanel, settings.getOutputEncoding());
                 //encodingCombo.setLayoutData(new GridData(GridData.HORIZONTAL_ALIGN_BEGINNING, GridData.VERTICAL_ALIGN_BEGINNING, true, false, 1, 1));
                 encodingCombo.addModifyListener(e -> {
                     settings.setOutputEncoding(encodingCombo.getText());
                     updatePageCompletion();
                 });
-                timestampPattern = UIUtils.createLabelText(generalSettings, DTMessages.data_transfer_wizard_output_label_timestamp_pattern, GeneralUtils.DEFAULT_TIMESTAMP_PATTERN, SWT.BORDER);
-                timestampPattern.addModifyListener(e -> {
-                    settings.setOutputTimestampPattern(timestampPattern.getText());
-                });
-                encodingBOMCheckbox = UIUtils.createCheckbox(generalSettings, DTMessages.data_transfer_wizard_output_label_insert_bom, DTMessages.data_transfer_wizard_output_label_insert_bom_tooltip, false, 1);
+                encodingBOMCheckbox = UIUtils.createCheckbox(
+                    advancedSettingPanel,
+                    DTMessages.data_transfer_wizard_output_label_insert_bom,
+                    DTMessages.data_transfer_wizard_output_label_insert_bom_tooltip,
+                    false,
+                    3
+                );
                 encodingBOMCheckbox.addSelectionListener(new SelectionAdapter() {
                     @Override
                     public void widgetSelected(SelectionEvent e) {
                         settings.setOutputEncodingBOM(encodingBOMCheckbox.getSelection());
                     }
                 });
-            }
-            
-            singleFileCheck = UIUtils.createCheckbox(generalSettings, DTMessages.data_transfer_wizard_output_label_use_single_file, DTMessages.data_transfer_wizard_output_label_use_single_file_tip, false, 5);
-            singleFileCheck.addSelectionListener(new SelectionAdapter() {
-                @Override
-                public void widgetSelected(SelectionEvent e) {
-                    settings.setUseSingleFile(singleFileCheck.getSelection());
-                    updateControlsEnablement();
-                }
-            });
-            compressCheckbox = UIUtils.createCheckbox(generalSettings, DTMessages.data_transfer_wizard_output_checkbox_compress, null, false, 1);
-            compressCheckbox.addSelectionListener(new SelectionAdapter() {
-                @Override
-                public void widgetSelected(SelectionEvent e) {
-                    settings.setCompressResults(compressCheckbox.getSelection());
-                    updateControlsEnablement();
-                }
-            });
+                timestampPattern = UIUtils.createLabelText(
+                    advancedSettingPanel,
+                    DTMessages.data_transfer_wizard_output_label_timestamp_pattern,
+                    GeneralUtils.DEFAULT_TIMESTAMP_PATTERN,
+                    SWT.BORDER,
+                    GridDataFactory.create(GridData.HORIZONTAL_ALIGN_BEGINNING).hint(200, -1).span(4, 1).create()
+                );
+                timestampPattern.addModifyListener(e ->
+                    settings.setOutputTimestampPattern(timestampPattern.getText()));
 
-            {
-                Composite outFilesSettings = UIUtils.createComposite(generalSettings, 3);
-                outFilesSettings.setLayoutData(new GridData(GridData.BEGINNING, GridData.BEGINNING, true, false, 5, 1));
-
-                splitFilesCheckbox = UIUtils.createCheckbox(outFilesSettings, DTMessages.data_transfer_wizard_output_checkbox_split_files, DTMessages.data_transfer_wizard_output_checkbox_split_files_tip, false, 1);
-                splitFilesCheckbox.addSelectionListener(new SelectionAdapter() {
+                singleFileCheck = UIUtils.createCheckbox(
+                    advancedSettingPanel,
+                    DTMessages.data_transfer_wizard_output_label_use_single_file,
+                    DTMessages.data_transfer_wizard_output_label_use_single_file_tip,
+                    false,
+                    5
+                );
+                singleFileCheck.addSelectionListener(new SelectionAdapter() {
                     @Override
                     public void widgetSelected(SelectionEvent e) {
-                        settings.setSplitOutFiles(splitFilesCheckbox.getSelection());
+                        settings.setUseSingleFile(singleFileCheck.getSelection());
                         updateControlsEnablement();
                     }
                 });
-                maximumFileSizeLabel = UIUtils.createControlLabel(outFilesSettings, DTUIMessages.stream_consumer_page_output_label_maximum_file_size);
-                maximumFileSizeText = new Text(outFilesSettings, SWT.BORDER);
-                maximumFileSizeText.addVerifyListener(UIUtils.getIntegerVerifyListener(Locale.ENGLISH));
-                maximumFileSizeText.addModifyListener(e ->
-                    settings.setMaxOutFileSize(CommonUtils.toLong(maximumFileSizeText.getText())));
-                gd = new GridData(GridData.HORIZONTAL_ALIGN_BEGINNING);
-                gd.widthHint = UIUtils.getFontHeight(maximumFileSizeText) * 10;
-                maximumFileSizeText.setLayoutData(gd);
-            }
-
-            {
-                final ExpandableComposite expander = new ExpandableComposite(generalSettings, SWT.NONE);
-                expander.setLayoutData(new GridData(GridData.FILL, GridData.BEGINNING, false, false, 5, 1));
-                expander.addExpansionListener(new ExpansionAdapter() {
+                compressCheckbox = UIUtils.createCheckbox(
+                    advancedSettingPanel,
+                    DTMessages.data_transfer_wizard_output_checkbox_compress,
+                    null,
+                    false,
+                    5
+                );
+                compressCheckbox.addSelectionListener(new SelectionAdapter() {
                     @Override
-                    public void expansionStateChanged(ExpansionEvent e) {
-                        updateFileConflictExpanderTitle(expander, settings);
-                        UIUtils.resizeShell(parent.getShell());
+                    public void widgetSelected(SelectionEvent e) {
+                        settings.setCompressResults(compressCheckbox.getSelection());
+                        updateControlsEnablement();
                     }
                 });
-                Composite fileConflictBehaviorSettings = UIUtils.createComposite(expander, 2);
-                expander.setClient(fileConflictBehaviorSettings);
-                updateFileConflictExpanderTitle(expander, settings);
-                
-                dataFileConflictBehaviorSelector = new EnumSelectionGroup<>(
-                    fileConflictBehaviorSettings,
-                    DTMessages.data_transfer_file_conflict_behavior_setting,
-                    List.of(
-                        DataFileConflictBehavior.ASK,
-                        DataFileConflictBehavior.APPEND,
-                        DataFileConflictBehavior.PATCHNAME,
-                        DataFileConflictBehavior.OVERWRITE
-                    ),
-                    v -> v.title,
-                    DataFileConflictBehavior.ASK,
-                    v -> {
-                        settings.setDataFileConflictBehavior(v);
-                        updateFileConflictExpanderTitle(expander, settings);
-                    },
-                    v -> v != DataFileConflictBehavior.OVERWRITE || confirmPossibleFileOverwrite()
-                );
-                blobFileConflictBehaviorSelector = new EnumSelectionGroup<>(
-                    fileConflictBehaviorSettings,
-                    DTMessages.data_transfer_blob_file_conflict_behavior_setting,
-                    List.of(BlobFileConflictBehavior.ASK, BlobFileConflictBehavior.PATCHNAME, BlobFileConflictBehavior.OVERWRITE),
-                    v -> v.title,
-                    BlobFileConflictBehavior.ASK,
-                    v -> {
-                        settings.setBlobFileConflictBehavior(v);
-                        updateFileConflictExpanderTitle(expander, settings);
-                    },
-                    v -> v != BlobFileConflictBehavior.OVERWRITE || confirmPossibleFileOverwrite()
+
+                createOutputFilesSplitPanel(advancedSettingPanel, settings);
+                createFileConflictResolutionPanel(advancedSettingPanel, settings);
+
+                // No resolver - several producers may present.
+                new VariablesHintLabel(
+                    advancedSettingPanel,
+                    DTUIMessages.stream_consumer_page_output_variables_hint_label,
+                    DTUIMessages.stream_consumer_page_output_variables_hint_label,
+                    StreamTransferConsumer.VARIABLES,
+                    true
                 );
             }
-
-            // No resolver - several producers may present.
-            new VariablesHintLabel(
-                generalSettings,
-                DTUIMessages.stream_consumer_page_output_variables_hint_label,
-                DTUIMessages.stream_consumer_page_output_variables_hint_label,
-                StreamTransferConsumer.VARIABLES,
-                true
-            );
         }
 
         {
-            Group resultsSettings = UIUtils.createControlGroup(composite, DTUIMessages.stream_consumer_page_output_label_results, 1, GridData.FILL_HORIZONTAL, 0);
+            Composite resultsSettings = UIUtils.createTitledComposite(
+                composite,
+                DTUIMessages.stream_consumer_page_output_label_results,
+                2,
+                GridData.FILL_HORIZONTAL
+            );
 
             showFinalMessageCheckbox = UIUtils.createCheckbox(resultsSettings, DTUIMessages.stream_consumer_page_output_label_show_finish_message, getWizard().getSettings().isShowFinalMessage());
             showFinalMessageCheckbox.addSelectionListener(new SelectionAdapter() {
@@ -364,8 +308,8 @@ public class StreamConsumerPageOutput extends DataTransferPageNodeSettings {
             for (DataTransferEventProcessorDescriptor descriptor : dataTransferRegistry.getEventProcessors(StreamTransferConsumer.NODE_ID)) {
                 try {
                     final UIPropertyConfiguratorDescriptor configuratorDescriptor = configuratorRegistry.getDescriptor(descriptor.getType().getImplName());
-                    final IDataTransferEventProcessorConfigurator configurator = configuratorDescriptor.createConfigurator();
-                    this.processors.put(descriptor.getId(), new EventProcessorComposite(resultsSettings, settings, descriptor, configurator));
+                    final IDataTransferEventProcessorConfigurator<StreamConsumerSettings> configurator = configuratorDescriptor.createConfigurator();
+                    this.processors.put(descriptor.getId(), new EventProcessorComposite<>(this::updatePageCompletion, resultsSettings, settings, descriptor, configurator));
                 } catch (Exception e) {
                     log.error("Can't create event processor", e);
                 }
@@ -389,11 +333,140 @@ public class StreamConsumerPageOutput extends DataTransferPageNodeSettings {
         UIUtils.createLink(
             composite,
             DTMessages.data_transfer_wizard_output_export_to_external_storage_link,
-            SelectionListener.widgetSelectedAdapter(e -> ShellUtils.launchProgram(e.text))
+            SelectionListener.widgetSelectedAdapter(
+                e -> ShellUtils.launchProgram(HelpUtils.getHelpExternalReference(HELP_DT_EXTERNAL_LINK)))
         );
 
         setControl(composite);
 
+    }
+
+    private void createGeneralSettingSPanel(Composite composite, StreamConsumerSettings settings) {
+        Composite generalSettings = UIUtils.createTitledComposite(
+            composite,
+            DTMessages.data_transfer_wizard_output_group_general,
+            2,
+            GridData.FILL_HORIZONTAL
+        );
+        clipboardCheck = UIUtils.createCheckbox(
+            generalSettings,
+            DTMessages.data_transfer_wizard_output_label_copy_to_clipboard,
+            null,
+            false,
+            1
+        );
+        clipboardCheck.addSelectionListener(new SelectionAdapter() {
+            @Override
+            public void widgetSelected(SelectionEvent e) {
+                settings.setOutputClipboard(clipboardCheck.getSelection());
+                updateControlsEnablement();
+                updatePageCompletion();
+            }
+        });
+        UIUtils.createPushButton(generalSettings, null, null, UIIcon.CONFIGURATION,
+            new SelectionAdapter() {
+                @Override
+                public void widgetSelected(SelectionEvent e) {
+                    UIUtils.showPreferencesFor(getShell(), null, PrefPageDataTransfer.PAGE_ID);
+                }
+            }
+        ).setLayoutData(new GridData(GridData.HORIZONTAL_ALIGN_END));
+
+        // Output path/pattern
+
+        directoryText = DialogUtils.createOutputFolderChooser(
+            generalSettings, null, getWizard().getProject(), true, e -> {
+                settings.setOutputFolder(directoryText.getText());
+                updatePageCompletion();
+            }
+        );
+
+        UIUtils.createControlLabel(generalSettings, DTMessages.data_transfer_wizard_output_label_file_name_pattern);
+        fileNameText = new Text(generalSettings, SWT.BORDER);
+        GridData gd = new GridData(GridData.FILL_HORIZONTAL);
+        gd.widthHint = 200;
+        fileNameText.setLayoutData(gd);
+        fileNameText.addModifyListener(e -> {
+            settings.setOutputFilePattern(fileNameText.getText());
+            updatePageCompletion();
+        });
+    }
+
+    private void createOutputFilesSplitPanel(Composite advancedSettingPanel, StreamConsumerSettings settings) {
+        GridData gd;
+        Composite outFilesSettings = UIUtils.createComposite(advancedSettingPanel, 3);
+        outFilesSettings.setLayoutData(new GridData(GridData.BEGINNING, GridData.BEGINNING, true, false, 5, 1));
+
+        splitFilesCheckbox = UIUtils.createCheckbox(
+            outFilesSettings,
+            DTMessages.data_transfer_wizard_output_checkbox_split_files,
+            DTMessages.data_transfer_wizard_output_checkbox_split_files_tip,
+            false,
+            1
+        );
+        splitFilesCheckbox.addSelectionListener(new SelectionAdapter() {
+            @Override
+            public void widgetSelected(SelectionEvent e) {
+                settings.setSplitOutFiles(splitFilesCheckbox.getSelection());
+                updateControlsEnablement();
+            }
+        });
+        maximumFileSizeLabel = UIUtils.createControlLabel(
+            outFilesSettings,
+            DTUIMessages.stream_consumer_page_output_label_maximum_file_size
+        );
+        maximumFileSizeText = new Text(outFilesSettings, SWT.BORDER);
+        maximumFileSizeText.addVerifyListener(UIUtils.getIntegerVerifyListener(Locale.ENGLISH));
+        maximumFileSizeText.addModifyListener(e ->
+            settings.setMaxOutFileSize(CommonUtils.toLong(maximumFileSizeText.getText())));
+        gd = new GridData(GridData.HORIZONTAL_ALIGN_BEGINNING);
+        gd.widthHint = UIUtils.getFontHeight(maximumFileSizeText) * 10;
+        maximumFileSizeText.setLayoutData(gd);
+    }
+
+    private void createFileConflictResolutionPanel(Composite advancedSettingPanel, StreamConsumerSettings settings) {
+        final ExpandableComposite fcExpander = new ExpandableComposite(advancedSettingPanel, SWT.NONE);
+        fcExpander.setLayoutData(new GridData(GridData.FILL, GridData.BEGINNING, false, false, 5, 1));
+        fcExpander.addExpansionListener(new ExpansionAdapter() {
+            @Override
+            public void expansionStateChanged(ExpansionEvent e) {
+                updateFileConflictExpanderTitle(fcExpander, settings);
+                UIUtils.resizeShell(advancedSettingPanel.getShell());
+            }
+        });
+        Composite fileConflictBehaviorSettings = UIUtils.createComposite(fcExpander, 2);
+        fcExpander.setClient(fileConflictBehaviorSettings);
+        updateFileConflictExpanderTitle(fcExpander, settings);
+
+        dataFileConflictBehaviorSelector = new EnumSelectionGroup<>(
+            fileConflictBehaviorSettings,
+            DTMessages.data_transfer_file_conflict_behavior_setting,
+            List.of(
+                DataFileConflictBehavior.ASK,
+                DataFileConflictBehavior.APPEND,
+                DataFileConflictBehavior.PATCHNAME,
+                DataFileConflictBehavior.OVERWRITE
+            ),
+            v -> v.title,
+            DataFileConflictBehavior.ASK,
+            v -> {
+                settings.setDataFileConflictBehavior(v);
+                updateFileConflictExpanderTitle(fcExpander, settings);
+            },
+            v -> v != DataFileConflictBehavior.OVERWRITE || confirmPossibleFileOverwrite()
+        );
+        blobFileConflictBehaviorSelector = new EnumSelectionGroup<>(
+            fileConflictBehaviorSettings,
+            DTMessages.data_transfer_blob_file_conflict_behavior_setting,
+            List.of(BlobFileConflictBehavior.ASK, BlobFileConflictBehavior.PATCHNAME, BlobFileConflictBehavior.OVERWRITE),
+            v -> v.title,
+            BlobFileConflictBehavior.ASK,
+            v -> {
+                settings.setBlobFileConflictBehavior(v);
+                updateFileConflictExpanderTitle(fcExpander, settings);
+            },
+            v -> v != BlobFileConflictBehavior.OVERWRITE || confirmPossibleFileOverwrite()
+        );
     }
 
     private void updateFileConflictExpanderTitle(ExpandableComposite expander, StreamConsumerSettings settings) {
@@ -418,12 +491,12 @@ public class StreamConsumerPageOutput extends DataTransferPageNodeSettings {
         blobFileConflictBehaviorSelector.setEnabled(
             !clipboard && getWizard().getPageSettings(this, StreamConsumerSettings.class).getLobExtractType() == LobExtractType.FILES
         );
-        boolean compressableByConflictResolution = dataFileConflictBehaviorSelector.getValue() != DataFileConflictBehavior.APPEND
-            && dataFileConflictBehaviorSelector.getValue() != DataFileConflictBehavior.ASK
-            && blobFileConflictBehaviorSelector.getValue() != BlobFileConflictBehavior.ASK;
         directoryText.setEnabled(!clipboard);
         fileNameText.setEnabled(!clipboard);
-        compressCheckbox.setEnabled(!clipboard && compressableByConflictResolution && !singleFileCheck.getSelection());
+        compressCheckbox.setEnabled(!clipboard && !singleFileCheck.getSelection());
+        if (compressCheckbox.getSelection() && dataFileConflictBehaviorSelector.getValue().equals(DataFileConflictBehavior.APPEND)) {
+            dataFileConflictBehaviorSelector.setValue(DataFileConflictBehavior.PATCHNAME);
+        }
         splitFilesCheckbox.setEnabled(!clipboard);
         maximumFileSizeLabel.setEnabled(!clipboard && splitFilesCheckbox.getSelection());
         maximumFileSizeText.setEnabled(!clipboard && splitFilesCheckbox.getSelection());
@@ -431,7 +504,7 @@ public class StreamConsumerPageOutput extends DataTransferPageNodeSettings {
         encodingBOMCheckbox.setEnabled(!isBinary && !clipboard);
         timestampPattern.setEnabled(!clipboard);
 
-        for (EventProcessorComposite processor : processors.values()) {
+        for (EventProcessorComposite<?> processor : processors.values()) {
             processor.setProcessorAvailable(processor.isProcessorApplicable());
         }
     }
@@ -443,45 +516,47 @@ public class StreamConsumerPageOutput extends DataTransferPageNodeSettings {
         final DataTransferProcessorDescriptor descriptor = getWizard().getSettings().getProcessor();
         final StreamConsumerSettings settings = getWizard().getPageSettings(this, StreamConsumerSettings.class);
 
-        clipboardCheck.setSelection(settings.isOutputClipboard() && !descriptor.isBinaryFormat());
-        singleFileCheck.setSelection(settings.isUseSingleFile() && descriptor.isAppendable());
-        dataFileConflictBehaviorSelector.setValue(settings.getDataFileConflictBehavior());
-        blobFileConflictBehaviorSelector.setValue(settings.getBlobFileConflictBehavior());
-        directoryText.setText(CommonUtils.toString(settings.getOutputFolder()));
-        fileNameText.setText(CommonUtils.toString(settings.getOutputFilePattern()));
-        compressCheckbox.setSelection(settings.isCompressResults());
-        splitFilesCheckbox.setSelection(settings.isSplitOutFiles());
-        maximumFileSizeText.setText(String.valueOf(settings.getMaxOutFileSize()));
-        encodingCombo.setText(CommonUtils.toString(settings.getOutputEncoding()));
-        timestampPattern.setText(settings.getOutputTimestampPattern());
-        encodingBOMCheckbox.setSelection(settings.isOutputEncodingBOM() && !descriptor.isBinaryFormat());
-        showFinalMessageCheckbox.setSelection(getWizard().getSettings().isShowFinalMessage());
-        
-        if (!getWizard().getSettings().getProcessor().isAppendable() || settings.isCompressResults()) {
-            if (settings.getDataFileConflictBehavior() == DataFileConflictBehavior.APPEND) {
-                dataFileConflictBehaviorSelector.setValue(dataFileConflictBehaviorSelector.getDefaultValue());
+        {
+            clipboardCheck.setSelection(settings.isOutputClipboard() && !descriptor.isBinaryFormat());
+            singleFileCheck.setSelection(settings.isUseSingleFile() && descriptor.isAppendable());
+            dataFileConflictBehaviorSelector.setValue(settings.getDataFileConflictBehavior());
+            blobFileConflictBehaviorSelector.setValue(settings.getBlobFileConflictBehavior());
+            directoryText.setText(CommonUtils.toString(settings.getOutputFolder()));
+            fileNameText.setText(CommonUtils.toString(settings.getOutputFilePattern()));
+            compressCheckbox.setSelection(settings.isCompressResults());
+            splitFilesCheckbox.setSelection(settings.isSplitOutFiles());
+            maximumFileSizeText.setText(String.valueOf(settings.getMaxOutFileSize()));
+            encodingCombo.setText(CommonUtils.toString(settings.getOutputEncoding()));
+            timestampPattern.setText(settings.getOutputTimestampPattern());
+            encodingBOMCheckbox.setSelection(settings.isOutputEncodingBOM() && !descriptor.isBinaryFormat());
+            showFinalMessageCheckbox.setSelection(getWizard().getSettings().isShowFinalMessage());
+
+            if (!getWizard().getSettings().getProcessor().isAppendable() || settings.isCompressResults()) {
+                if (settings.getDataFileConflictBehavior() == DataFileConflictBehavior.APPEND) {
+                    dataFileConflictBehaviorSelector.setValue(dataFileConflictBehaviorSelector.getDefaultValue());
+                }
             }
-        }
 
-        if (descriptor.isBinaryFormat()) {
-            settings.setOutputClipboard(false);
-        }
+            if (descriptor.isBinaryFormat()) {
+                settings.setOutputClipboard(false);
+            }
 
-        for (Map.Entry<String, EventProcessorComposite> processor : processors.entrySet()) {
-            processor.getValue().setProcessorEnabled(settings.hasEventProcessor(processor.getKey()));
-            processor.getValue().loadSettings(settings.getEventProcessorSettings(processor.getKey()));
-        }
+            for (Map.Entry<String, EventProcessorComposite<?>> processor : processors.entrySet()) {
+                processor.getValue().setProcessorEnabled(settings.hasEventProcessor(processor.getKey()));
+                processor.getValue().loadSettings(settings.getEventProcessorSettings(processor.getKey()));
+            }
 
-        updatePageCompletion();
-        updateControlsEnablement();
+            updatePageCompletion();
+            updateControlsEnablement();
+        }
     }
 
     @Override
     public void deactivatePage() {
         final StreamConsumerSettings settings = getWizard().getPageSettings(this, StreamConsumerSettings.class);
 
-        for (Map.Entry<String, EventProcessorComposite> processor : processors.entrySet()) {
-            final EventProcessorComposite configurator = processor.getValue();
+        for (Map.Entry<String, EventProcessorComposite<?>> processor : processors.entrySet()) {
+            final EventProcessorComposite<?> configurator = processor.getValue();
             if (configurator.isProcessorEnabled() && configurator.isProcessorApplicable() && configurator.isProcessorComplete()) {
                 configurator.saveSettings(settings.getEventProcessorSettings(processor.getKey()));
             }
@@ -513,9 +588,9 @@ public class StreamConsumerPageOutput extends DataTransferPageNodeSettings {
             return false;
         }
 
-        for (EventProcessorComposite processor : processors.values()) {
+        for (EventProcessorComposite<?> processor : processors.values()) {
             if (processor.isProcessorApplicable() && processor.isProcessorEnabled() && !processor.isProcessorComplete()) {
-                setErrorMessage(NLS.bind(DTMessages.data_transfer_wizard_output_event_processor_error_incomplete_configuration, processor.descriptor.getLabel()));
+                setErrorMessage(NLS.bind(DTMessages.data_transfer_wizard_output_event_processor_error_incomplete_configuration, processor.getDescriptor().getLabel()));
                 return false;
             }
         }
@@ -538,7 +613,7 @@ public class StreamConsumerPageOutput extends DataTransferPageNodeSettings {
 
         final List<DataTransferPipe> pipes = getWizard().getSettings().getDataPipes();
         if (pipes.size() == 1) {
-            final DBSObject object = pipes.get(0).getProducer().getDatabaseObject();
+            final DBSObject object = pipes.getFirst().getProducer().getDatabaseObject();
             final SQLQueryContainer container = DBUtils.getAdapter(SQLQueryContainer.class, object);
             if (container != null) {
                 variables.addAll(container.getQueryParameters().keySet());
@@ -551,120 +626,5 @@ public class StreamConsumerPageOutput extends DataTransferPageNodeSettings {
     @Override
     public boolean isPageApplicable() {
         return isConsumerOfType(StreamTransferConsumer.class);
-    }
-
-    private class EventProcessorComposite extends Composite {
-        private final DataTransferEventProcessorDescriptor descriptor;
-        private final IDataTransferEventProcessorConfigurator configurator;
-        private final StreamConsumerSettings settings;
-        private final Button enabledCheckbox;
-        private Link configureLink;
-
-        public EventProcessorComposite(@NotNull Composite parent, @NotNull StreamConsumerSettings settings, @NotNull DataTransferEventProcessorDescriptor descriptor, @Nullable IDataTransferEventProcessorConfigurator configurator) {
-            super(parent, SWT.NONE);
-            this.descriptor = descriptor;
-            this.configurator = configurator;
-            this.settings = settings;
-
-            final boolean hasControl = configurator != null && configurator.hasControl();
-
-            setLayoutData(GridDataFactory.fillDefaults().grab(true, true).create());
-            setLayout(GridLayoutFactory.fillDefaults().numColumns(hasControl ? 2 : 1).create());
-
-            enabledCheckbox = UIUtils.createCheckbox(this, descriptor.getLabel(), descriptor.getDescription(), false, 1);
-            enabledCheckbox.addSelectionListener(new SelectionAdapter() {
-                @Override
-                public void widgetSelected(SelectionEvent e) {
-                    setProcessorEnabled(enabledCheckbox.getSelection());
-                }
-            });
-
-            if (hasControl) {
-                configureLink = UIUtils.createLink(this, DTMessages.data_transfer_wizard_output_event_processor_configure, new SelectionAdapter() {
-                    @Override
-                    public void widgetSelected(SelectionEvent e) {
-                        final ConfigureDialog dialog = new ConfigureDialog(getShell(), descriptor, configurator);
-                        if (dialog.open() == IDialogConstants.OK_ID) {
-                            updatePageCompletion();
-                        }
-                    }
-                });
-            }
-        }
-
-        public void loadSettings(@NotNull Map<String, Object> settings) {
-            configurator.loadSettings(settings);
-        }
-
-        public void saveSettings(@NotNull Map<String, Object> settings) {
-            configurator.saveSettings(settings);
-        }
-
-        public boolean isProcessorEnabled() {
-            return enabledCheckbox.getEnabled() && enabledCheckbox.getSelection();
-        }
-
-        public boolean isProcessorApplicable() {
-            return configurator != null && configurator.isApplicable(settings);
-        }
-
-        public boolean isProcessorComplete() {
-            return configurator.isComplete();
-        }
-
-        public void setProcessorAvailable(boolean available) {
-            setProcessorEnabled(enabledCheckbox.getSelection(), available);
-        }
-
-        public void setProcessorEnabled(boolean enabled) {
-            setProcessorEnabled(enabled, enabledCheckbox.getEnabled());
-        }
-
-        private void setProcessorEnabled(boolean enabled, boolean available) {
-            enabledCheckbox.setSelection(enabled);
-            enabledCheckbox.setEnabled(available);
-
-            if (configurator.hasControl()) {
-                configureLink.setEnabled(enabled && available);
-            }
-
-            if (enabled && available) {
-                settings.addEventProcessor(descriptor.getId());
-            } else {
-                settings.removeEventProcessor(descriptor.getId());
-            }
-
-            updatePageCompletion();
-        }
-    }
-
-    private static class ConfigureDialog extends BaseDialog {
-        @NotNull
-        private final DataTransferEventProcessorDescriptor descriptor;
-        private final IDataTransferEventProcessorConfigurator configurator;
-
-        public ConfigureDialog(@NotNull Shell shell, @NotNull DataTransferEventProcessorDescriptor descriptor, @NotNull IDataTransferEventProcessorConfigurator configurator) {
-            super(shell, NLS.bind(DTMessages.data_transfer_wizard_output_event_processor_configure_title, descriptor.getLabel()), null);
-            this.descriptor = descriptor;
-            this.configurator = configurator;
-            setShellStyle(SWT.DIALOG_TRIM | SWT.RESIZE | SWT.APPLICATION_MODAL);
-        }
-
-        @Override
-        protected Composite createDialogArea(Composite parent) {
-            final Composite composite = super.createDialogArea(parent);
-            configurator.createControl(composite, descriptor, this::updateCompletion);
-            return composite;
-        }
-
-        @Override
-        protected void createButtonsForButtonBar(Composite parent) {
-            super.createButtonsForButtonBar(parent);
-            updateCompletion();
-        }
-
-        private void updateCompletion() {
-            getButton(IDialogConstants.OK_ID).setEnabled(configurator.isComplete());
-        }
     }
 }

@@ -1,6 +1,6 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2023 DBeaver Corp and others
+ * Copyright (C) 2010-2026 DBeaver Corp and others
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,11 +27,11 @@ import org.jkiss.dbeaver.model.meta.Property;
  */
 public class MySQLTableConstraintColumn extends AbstractTableConstraintColumn
 {
-    private AbstractTableConstraint<MySQLTable> constraint;
-    private MySQLTableColumn tableColumn;
-    private int ordinalPosition;
+    private final AbstractTableConstraint<MySQLTable, ? extends MySQLTableConstraintColumn> constraint;
+    private final MySQLTableColumn tableColumn;
+    private final int ordinalPosition;
 
-    public MySQLTableConstraintColumn(AbstractTableConstraint<MySQLTable> constraint, MySQLTableColumn tableColumn, int ordinalPosition)
+    public MySQLTableConstraintColumn(AbstractTableConstraint<MySQLTable, ? extends MySQLTableConstraintColumn> constraint, MySQLTableColumn tableColumn, int ordinalPosition)
     {
         this.constraint = constraint;
         this.tableColumn = tableColumn;
@@ -46,7 +46,7 @@ public class MySQLTableConstraintColumn extends AbstractTableConstraintColumn
         return tableColumn.getName();
     }
 
-    @NotNull
+    @Nullable
     @Override
     @Property(viewable = true, order = 1)
     public MySQLTableColumn getAttribute()
@@ -69,7 +69,7 @@ public class MySQLTableConstraintColumn extends AbstractTableConstraintColumn
     }
 
     @Override
-    public AbstractTableConstraint<MySQLTable> getParentObject()
+    public AbstractTableConstraint<MySQLTable, ? extends MySQLTableConstraintColumn> getParentObject()
     {
         return constraint;
     }

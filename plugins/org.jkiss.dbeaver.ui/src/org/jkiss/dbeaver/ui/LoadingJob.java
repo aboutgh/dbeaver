@@ -1,6 +1,6 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2023 DBeaver Corp and others
+ * Copyright (C) 2010-2026 DBeaver Corp and others
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,6 +18,8 @@ package org.jkiss.dbeaver.ui;
 
 import org.eclipse.core.runtime.IStatus;
 import org.eclipse.core.runtime.Status;
+import org.jkiss.code.NotNull;
+import org.jkiss.code.Nullable;
 import org.jkiss.dbeaver.Log;
 import org.jkiss.dbeaver.model.runtime.AbstractJob;
 import org.jkiss.dbeaver.model.runtime.DBRProgressMonitor;
@@ -26,74 +28,80 @@ import org.jkiss.dbeaver.model.runtime.load.AbstractLoadService;
 import org.jkiss.dbeaver.model.runtime.load.ILoadService;
 import org.jkiss.dbeaver.model.runtime.load.ILoadVisualizer;
 import org.jkiss.dbeaver.model.runtime.load.ILoadVisualizerExt;
+import org.jkiss.dbeaver.runtime.DBInterruptedException;
 import org.jkiss.dbeaver.runtime.DBWorkbench;
 import org.jkiss.dbeaver.ui.internal.UIActivator;
+import org.jkiss.utils.CommonUtils;
 
 import java.lang.reflect.InvocationTargetException;
 
-public class LoadingJob<RESULT>  extends AbstractJob {
+public class LoadingJob<RESULT> extends AbstractJob {
 
     private static final Log log = Log.getLog(LoadingJob.class);
 
     public static final Object LOADING_FAMILY = new Object();
     private boolean loadFinished;
+    private boolean showErrors = true;
 
     public static <RESULT> LoadingJob<RESULT> createService(
-        ILoadService<RESULT> loadingService,
-        ILoadVisualizer<RESULT> visualizer)
-    {
+        @NotNull ILoadService<RESULT> loadingService,
+        @NotNull ILoadVisualizer<RESULT> visualizer
+    ) {
         return new LoadingJob<>(loadingService, visualizer);
     }
 
-    private ILoadService<RESULT> loadingService;
-    private ILoadVisualizer<RESULT> visualizer;
+    private final ILoadService<RESULT> loadingService;
+    private final ILoadVisualizer<RESULT> visualizer;
 
-    public LoadingJob(ILoadService<RESULT> loadingService, ILoadVisualizer<RESULT> visualizer)
-    {
+    public LoadingJob(@NotNull ILoadService<RESULT> loadingService, @NotNull ILoadVisualizer<RESULT> visualizer) {
         super(loadingService.getServiceName());
         this.loadingService = loadingService;
         this.visualizer = visualizer;
         setUser(false);
     }
 
-    public ILoadService<RESULT> getLoadingService()
-    {
+    public ILoadService<RESULT> getLoadingService() {
         return loadingService;
     }
 
-    public ILoadVisualizer<RESULT> getVisualizer()
-    {
+    @Override
+    public boolean isForceCancel() {
+        return loadingService.isForceCancel();
+    }
+
+    @NotNull
+    public ILoadVisualizer<RESULT> getVisualizer() {
         return visualizer;
     }
 
-    @Override
-    protected IStatus run(DBRProgressMonitor monitor)
-    {
-        return run(monitor, true);
+    public boolean isShowErrors() {
+        return showErrors;
     }
 
-    private IStatus run(DBRProgressMonitor monitor, boolean lazy)
-    {
+    public void setShowErrors(boolean showErrors) {
+        this.showErrors = showErrors;
+    }
+
+    @NotNull
+    @Override
+    protected IStatus run(@NotNull DBRProgressMonitor monitor) {
         monitor = visualizer.overwriteMonitor(monitor);
-        if (this.loadingService instanceof AbstractLoadService) {
-            ((AbstractLoadService) this.loadingService).initService(monitor, this);
+        if (this.loadingService instanceof AbstractLoadService<?> als) {
+            als.initService(monitor, this);
         }
 
         LoadingUIJob<RESULT> updateUIJob = new LoadingUIJob<>(this);
         updateUIJob.schedule();
         Throwable error = null;
         RESULT result = null;
-        monitor.beginTask("Run service " + getName(), 1);
+        monitor.beginTask(getName(), 1);
         try {
             result = this.loadingService.evaluate(monitor);
-        }
-        catch (InvocationTargetException e) {
+        } catch (InvocationTargetException e) {
             error = e.getTargetException();
-        }
-        catch (InterruptedException e) {
+        } catch (InterruptedException e) {
             return new Status(Status.CANCEL, UIActivator.PLUGIN_ID, "Loading interrupted");
-        }
-        finally {
+        } finally {
             loadFinished = true;
             UIUtils.asyncExec(new LoadFinisher(result, error));
             monitor.done();
@@ -102,78 +110,78 @@ public class LoadingJob<RESULT>  extends AbstractJob {
     }
 
     @Override
-    public boolean belongsTo(Object family)
-    {
+    public boolean belongsTo(@NotNull Object family) {
         return family == loadingService.getFamily();
     }
 
-    public void syncRun()
-    {
-        run(new VoidProgressMonitor(), false);
+    public void syncRun() {
+        run(new VoidProgressMonitor());
     }
 
     private class LoadFinisher implements Runnable {
         private final RESULT innerResult;
         private final Throwable innerError;
 
-        LoadFinisher(RESULT innerResult, Throwable innerError)
-        {
+        LoadFinisher(@NotNull RESULT innerResult, @Nullable Throwable innerError) {
             this.innerResult = innerResult;
             this.innerError = innerError;
         }
 
         @Override
-        public void run()
-        {
+        public void run() {
             try {
                 visualizer.completeLoading(innerResult);
             } catch (Throwable e) {
                 log.debug(e);
             }
 
-            if (innerError != null) {
-                DBWorkbench.getPlatformUI().showError(
+            if (innerError != null && !(innerError instanceof DBInterruptedException)) {
+                if (showErrors) {
+                    DBWorkbench.getPlatformUI().showError(
                         getName(),
-                    null,
-                    innerError);
+                        null,
+                        innerError
+                    );
+                } else {
+                    log.debug(CommonUtils.getAllExceptionMessages(innerError));
+                }
             }
-            if (visualizer instanceof ILoadVisualizerExt) {
-                ((ILoadVisualizerExt) visualizer).finalizeLoading();
+            if (visualizer instanceof ILoadVisualizerExt lve) {
+                lve.finalizeLoading();
             }
         }
     }
 
-    class LoadingUIJob<RESULT> extends AbstractUIJob {
+    class LoadingUIJob<JOB_RESULT> extends AbstractUIJob {
 
         private static final long DELAY = 100;
 
-        private ILoadVisualizer<RESULT> visualizer;
+        private final ILoadVisualizer<JOB_RESULT> visualizer;
 
-        LoadingUIJob(LoadingJob<RESULT> loadingJob) {
+        LoadingUIJob(@NotNull LoadingJob<JOB_RESULT> loadingJob) {
             super(loadingJob.getName());
             this.visualizer = loadingJob.getVisualizer();
             setSystem(true);
         }
 
+        @NotNull
         @Override
-        public IStatus runInUIThread(DBRProgressMonitor monitor) {
-                if (!visualizer.isCompleted() && !loadFinished) {
-                    visualizer.visualizeLoading();
-                    schedule(DELAY);
-                }
+        public IStatus runInUIThread(@NotNull DBRProgressMonitor monitor) {
+            if (!visualizer.isCompleted() && !loadFinished) {
+                visualizer.visualizeLoading();
+                schedule(DELAY);
+            }
             //}
             return Status.OK_STATUS;
         }
 
         @Override
-        public boolean belongsTo(Object family)
-        {
+        public boolean belongsTo(Object family) {
             return family == LOADING_FAMILY;
         }
 
         @Override
-        protected void canceling()
-        {
+        protected void canceling() {
             super.canceling();
         }
     }

@@ -32,7 +32,7 @@
                 position="additions_end"
                 icon="#sql_text"
                 type="folder">
-            <objectType name="org.jkiss.dbeaver.ext.generic.model.GenericTable"/>
+            <objectType name="org.jkiss.dbeaver.ext.generic.model.GenericTable" if="object.supportsDDL()"/>
         </editor>
         <editor
                 id="generic.view.source.view"
@@ -44,7 +44,7 @@
                 icon="#sql_text"
                 type="folder"
                 embeddable="false">
-            <objectType name="org.jkiss.dbeaver.ext.generic.model.GenericView"/>
+            <objectType name="org.jkiss.dbeaver.ext.generic.model.GenericView" if="object.supportsDDL()"/>
         </editor>
         <editor id="generic.source.view" class="org.jkiss.dbeaver.ext.generic.editors.GenericSourceViewEditor"
                 label="%editor.source.name" description="%editor.source.name" icon="#sql_text" position="additions_middle"
@@ -61,6 +61,12 @@
         <configurator class="org.jkiss.dbeaver.ext.generic.views.GenericTablePrimaryKeyConfigurator">
             <objectType name="org.jkiss.dbeaver.ext.generic.model.GenericUniqueKey"/>
         </configurator>
+    </extension>
+
+    <extension point="org.jkiss.dbeaver.fileTypeHandler">
+        <handler id="msaccess" class="org.jkiss.dbeaver.ext.generic.file.MSAccessFileDatabaseHandler" remote="false" order="102">
+            <extension id="msaccess" extensions="accdb,mdb" icon="platform:/plugin/org.jkiss.dbeaver.ext.generic/icons/msaccess_icon_big.png"/>
+        </handler>
     </extension>
 
 </plugin>

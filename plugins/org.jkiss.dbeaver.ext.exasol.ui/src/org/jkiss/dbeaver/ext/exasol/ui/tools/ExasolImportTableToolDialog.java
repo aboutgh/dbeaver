@@ -1,7 +1,6 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2016 Karl Griesser (fullref@gmail.com)
- * Copyright (C) 2010-2023 DBeaver Corp and others
+ * Copyright (C) 2010-2026 DBeaver Corp and others
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -102,8 +101,8 @@ public class ExasolImportTableToolDialog extends ExasolBaseTableToolDialog {
 	@Override
 	protected void createControls(final Composite parent)
 	{
-		Group optionsGroup = UIUtils.createControlGroup(parent,
-				ExasolMessages.dialog_table_tools_options, 1, 0, 0);
+		Composite optionsGroup = UIUtils.createTitledComposite(parent,
+				ExasolMessages.dialog_table_tools_options, 1, GridData.FILL_HORIZONTAL);
 		optionsGroup.setLayoutData(new GridData(GridData.FILL_HORIZONTAL));
 
 		Composite composite = new Composite(optionsGroup, 2);
@@ -194,7 +193,7 @@ public class ExasolImportTableToolDialog extends ExasolBaseTableToolDialog {
 			}
 		});
 		
-		//  row seperator
+		//  row separator
 		cbRowSep = UIUtils.createLabelCombo(composite, ExasolMessages.dialog_table_tools_row_sep_mode, SWT.DROP_DOWN | SWT.READ_ONLY);
 		for (String mode: ExasolUIConstants.rowSeparators)
 		{

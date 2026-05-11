@@ -1,6 +1,6 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2023 DBeaver Corp and others
+ * Copyright (C) 2010-2026 DBeaver Corp and others
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,6 +24,7 @@ import org.eclipse.swt.events.MouseEvent;
 import org.eclipse.swt.events.SelectionAdapter;
 import org.eclipse.swt.events.SelectionEvent;
 import org.eclipse.swt.layout.GridData;
+import org.eclipse.swt.layout.GridLayout;
 import org.eclipse.swt.widgets.*;
 import org.jkiss.code.Nullable;
 import org.jkiss.dbeaver.DBException;
@@ -38,6 +39,7 @@ import org.jkiss.dbeaver.model.struct.*;
 import org.jkiss.dbeaver.runtime.DBWorkbench;
 import org.jkiss.dbeaver.ui.DBeaverIcons;
 import org.jkiss.dbeaver.ui.UIUtils;
+import org.jkiss.dbeaver.ui.internal.UINavigatorMessages;
 import org.jkiss.dbeaver.ui.navigator.NavigatorUtils;
 import org.jkiss.dbeaver.ui.navigator.database.DatabaseNavigatorTree;
 import org.jkiss.dbeaver.ui.navigator.database.load.TreeNodeSpecial;
@@ -57,8 +59,11 @@ public class SearchMetadataPage extends AbstractSearchPage {
     private static final String PROP_HISTORY = "search.metadata.history"; //$NON-NLS-1$
     private static final String PROP_OBJECT_TYPE = "search.metadata.object-type"; //$NON-NLS-1$
     private static final String PROP_SOURCES = "search.metadata.object-source"; //$NON-NLS-1$
+    private static final String PROP_SHOW_CONNECTED = "search.metadata.show-connected-only"; //$NON-NLS-1$
     private static final String PROP_SEARCH_IN_COMMENTS = "search.metadata.search-in-comments"; //$NON-NLS-1$
     private static final String PROP_SEARCH_IN_DEFINITIONS = "search.metadata.search-in-definitions"; //$NON-NLS-1$
+
+    private static final boolean CONNECT_ON_CLICK = true;
 
     private Table typesTable;
     private Combo searchText;
@@ -72,11 +77,12 @@ public class SearchMetadataPage extends AbstractSearchPage {
     private boolean searchInDefinitions;
     private int maxResults;
     private int matchTypeIndex;
-    private Set<DBSObjectType> checkedTypes = new HashSet<>();
-    private Set<String> searchHistory = new LinkedHashSet<>();
-    private Set<String> savedTypeNames = new HashSet<>();
+    private final Set<DBSObjectType> checkedTypes = new HashSet<>();
+    private final Set<String> searchHistory = new LinkedHashSet<>();
+    private final Set<String> savedTypeNames = new HashSet<>();
     private List<DBNNode> sourceNodes = new ArrayList<>();
-    private DBPProject currentProject;
+    private final DBPProject currentProject;
+    private boolean showConnected;
 
     public SearchMetadataPage() {
         super("Database objects search");
@@ -87,9 +93,12 @@ public class SearchMetadataPage extends AbstractSearchPage {
     public void createControl(Composite parent) {
         super.createControl(parent);
 
+        showConnected = DBWorkbench.getPlatform().getPreferenceStore().getBoolean(PROP_SHOW_CONNECTED);
+
         initializeDialogUnits(parent);
 
-        Composite searchGroup = UIUtils.createComposite(parent, 1);
+        Composite searchGroup = new Composite(parent, SWT.NONE);
+        searchGroup.setLayout(new GridLayout(1, false));
         searchGroup.setLayoutData(new GridData(GridData.FILL_BOTH));
 
         searchText = new Combo(searchGroup, SWT.DROP_DOWN);
@@ -106,11 +115,16 @@ public class SearchMetadataPage extends AbstractSearchPage {
             updateEnablement();
         });
 
-        Composite optionsGroup = new SashForm(parent, 2);
+        Composite optionsGroup = new SashForm(searchGroup, SWT.HORIZONTAL);
         optionsGroup.setLayoutData(new GridData(GridData.FILL_BOTH));
 
         {
-            Group sourceGroup = UIUtils.createControlGroup(optionsGroup, UISearchMessages.dialog_search_objects_group_objects_source, 1, GridData.FILL_BOTH, 0);
+            Composite sourceGroup = UIUtils.createTitledComposite(
+                optionsGroup,
+                UISearchMessages.dialog_search_objects_group_objects_source,
+                1,
+                GridData.FILL_BOTH
+            );
             DBPPlatform platform = DBWorkbench.getPlatform();
             final DBNProject projectNode = platform.getNavigatorModel().getRoot().getProjectNode(currentProject);
             DBNNode rootNode = projectNode == null ? platform.getNavigatorModel().getRoot() : projectNode.getDatabases();
@@ -128,9 +142,14 @@ public class SearchMetadataPage extends AbstractSearchPage {
                     if (element instanceof TreeNodeSpecial) {
                         return true;
                     }
+                    if (showConnected) {
+                        if (element instanceof DBNDataSource ds && ds.getDataSource() == null ||
+                            element instanceof DBNLocalFolder lf && !lf.hasConnected()) {
+                            return false;
+                        }
+                    }
                     if (element instanceof DBNNode) {
-                        if (element instanceof DBNDatabaseFolder) {
-                            DBNDatabaseFolder folder = (DBNDatabaseFolder)element;
+                        if (element instanceof DBNDatabaseFolder folder) {
                             Class<? extends DBSObject> folderItemsClass = folder.getChildrenClass();
                             return folderItemsClass != null && DBSObjectContainer.class.isAssignableFrom(folderItemsClass);
                         }
@@ -153,8 +172,7 @@ public class SearchMetadataPage extends AbstractSearchPage {
                     Object object = structSel.isEmpty() ? null : structSel.getFirstElement();
                     if (object instanceof DBNNode) {
                         for (DBNNode node = (DBNNode)object; node != null; node = node.getParentNode()) {
-                            if (node instanceof DBNDataSource) {
-                                DBNDataSource dsNode = (DBNDataSource) node;
+                            if (node instanceof DBNDataSource dsNode && CONNECT_ON_CLICK) {
                                 try {
                                     dsNode.initializeNode(null, status -> {
                                         if (status.isOK()) {
@@ -184,15 +202,26 @@ public class SearchMetadataPage extends AbstractSearchPage {
                     }
                 }
             });
+
+            final Button showConnectedCheck = new Button(sourceGroup, SWT.CHECK);
+            showConnectedCheck.setText(UINavigatorMessages.label_show_connected);
+            showConnectedCheck.setSelection(showConnected);
+            showConnectedCheck.addSelectionListener(new SelectionAdapter() {
+                @Override
+                public void widgetSelected(SelectionEvent e) {
+                    showConnected = showConnectedCheck.getSelection();
+                    treeViewer.refresh();
+                    DBWorkbench.getPlatform().getPreferenceStore().setValue(PROP_SHOW_CONNECTED, showConnected);
+                }
+            });
         }
 
         {
-            Group settingsGroup = UIUtils.createControlGroup(
+            Composite settingsGroup = UIUtils.createTitledComposite(
                 optionsGroup,
                 UISearchMessages.dialog_search_objects_group_settings,
                 2,
-                GridData.FILL_BOTH,
-                0);
+                GridData.FILL_BOTH);
 
             {
                 //new Label(searchGroup, SWT.NONE);
@@ -350,7 +379,7 @@ public class SearchMetadataPage extends AbstractSearchPage {
         if (!sourceNodes.isEmpty()) {
             dataSourceTree.getViewer().setSelection(
                 new StructuredSelection(sourceNodes));
-            DBNDataSource node = DBNDataSource.getDataSourceNode(sourceNodes.get(0));
+            DBNDataSource node = DBNDataSource.getDataSourceNode(sourceNodes.getFirst());
             if (node != null) {
                 dataSourceTree.getViewer().reveal(node);
             }
@@ -383,14 +412,14 @@ public class SearchMetadataPage extends AbstractSearchPage {
         return null;
     }
 
-    private DBSStructureAssistant getSelectedStructureAssistant()
+    private DBSStructureAssistant<?> getSelectedStructureAssistant()
     {
         return DBUtils.getAdapter(DBSStructureAssistant.class, getSelectedDataSource());
     }
 
     private void fillObjectTypes()
     {
-        DBSStructureAssistant assistant = getSelectedStructureAssistant();
+        DBSStructureAssistant<?> assistant = getSelectedStructureAssistant();
         typesTable.removeAll();
         if (assistant == null) {
             // No structure assistant - no object types
@@ -435,7 +464,7 @@ public class SearchMetadataPage extends AbstractSearchPage {
         }
 
         DBPDataSource dataSource = getSelectedDataSource();
-        DBSStructureAssistant assistant = getSelectedStructureAssistant();
+        DBSStructureAssistant<?> assistant = getSelectedStructureAssistant();
         if (dataSource == null || assistant == null) {
             throw new IllegalStateException("No active datasource");
         }
@@ -535,7 +564,7 @@ public class SearchMetadataPage extends AbstractSearchPage {
             // Object types
             StringBuilder typesString = new StringBuilder();
             for (DBSObjectType type : checkedTypes) {
-                if (typesString.length() > 0) {
+                if (!typesString.isEmpty()) {
                     typesString.append("|"); //$NON-NLS-1$
                 }
                 typesString.append(type.getTypeName());
@@ -564,7 +593,7 @@ public class SearchMetadataPage extends AbstractSearchPage {
         Object[] nodes = ((IStructuredSelection)tree.getViewer().getSelection()).toArray();
         for (Object obj : nodes) {
             DBNNode node = (DBNNode) obj;
-            if (sourcesString.length() > 0) {
+            if (!sourcesString.isEmpty()) {
                 sourcesString.append("|"); //$NON-NLS-1$
             }
             sourcesString.append(node.getNodeItemPath());

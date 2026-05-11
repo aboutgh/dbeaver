@@ -1,6 +1,6 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2023 DBeaver Corp and others
+ * Copyright (C) 2010-2025 DBeaver Corp and others
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -41,7 +41,7 @@ public interface DBSInstance extends DBSObject
      * @return default data source execution context.
      */
     @NotNull
-    DBCExecutionContext getDefaultContext(DBRProgressMonitor monitor, boolean meta);
+    DBCExecutionContext getDefaultContext(@NotNull DBRProgressMonitor monitor, boolean meta);
 
     /**
      * All opened execution contexts
@@ -59,7 +59,11 @@ public interface DBSInstance extends DBSObject
      * @return execution context
      */
     @NotNull
-    DBCExecutionContext openIsolatedContext(@NotNull DBRProgressMonitor monitor, @NotNull String purpose, @Nullable DBCExecutionContext initFrom) throws DBException;
+    DBCExecutionContext openIsolatedContext(
+        @NotNull DBRProgressMonitor monitor,
+        @NotNull String purpose,
+        @Nullable DBCExecutionContext initFrom
+    ) throws DBException;
 
     void shutdown(DBRProgressMonitor monitor);
 

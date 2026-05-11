@@ -1,7 +1,6 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2023 DBeaver Corp and others
- * Copyright (C) 2019 Andrew Khitrin (ahitrin@gmail.com)
+ * Copyright (C) 2010-2026 DBeaver Corp and others
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,11 +24,13 @@ import org.eclipse.swt.events.SelectionEvent;
 import org.eclipse.swt.layout.GridData;
 import org.eclipse.swt.widgets.Button;
 import org.eclipse.swt.widgets.Composite;
-import org.eclipse.swt.widgets.Group;
+import org.jkiss.code.NotNull;
+import org.jkiss.code.Nullable;
 import org.jkiss.dbeaver.ext.postgresql.PostgreMessages;
 import org.jkiss.dbeaver.ext.postgresql.model.PostgreDataSource;
 import org.jkiss.dbeaver.ext.postgresql.model.plan.PostgreQueryPlaner;
 import org.jkiss.dbeaver.model.DBPDataSource;
+import org.jkiss.dbeaver.model.edit.DBECommandContext;
 import org.jkiss.dbeaver.model.edit.DBEObjectConfigurator;
 import org.jkiss.dbeaver.model.exec.plan.DBCQueryPlanner;
 import org.jkiss.dbeaver.model.exec.plan.DBCQueryPlannerConfiguration;
@@ -55,7 +56,7 @@ public class PostgreExplainPlanConfigurator implements DBEObjectConfigurator<DBC
     private static PostgreDataSource dataSource;
 
     @Override
-    public DBCQueryPlannerConfiguration configureObject(DBRProgressMonitor monitor, Object container, DBCQueryPlannerConfiguration configuration, Map<String, Object> options) {
+    public DBCQueryPlannerConfiguration configureObject(@NotNull DBRProgressMonitor monitor, @Nullable DBECommandContext commandContext, @Nullable Object container, @NotNull DBCQueryPlannerConfiguration configuration, @NotNull Map<String, Object> options) {
         if (container instanceof DBCQueryPlanner) {
             DBPDataSource dbpDataSource = ((DBCQueryPlanner) container).getDataSource();
             if (dbpDataSource instanceof PostgreDataSource) {
@@ -107,17 +108,17 @@ public class PostgreExplainPlanConfigurator implements DBEObjectConfigurator<DBC
             super(UIUtils.getActiveWorkbenchShell(), PostgreMessages.dialog_query_planner_settings_title, null);
         }
 
+        @NotNull
         @Override
-        protected Composite createDialogArea(Composite parent) {
+        protected Composite createDialogArea(@NotNull Composite parent) {
             Composite dialogArea = super.createDialogArea(parent);
             boolean isServerAtLeast13 = dataSource != null && dataSource.isServerVersionAtLeast(13, 0);
             boolean isServerAtLeast9 = dataSource != null && dataSource.isServerVersionAtLeast(9, 0);
-            Group settingsGroup = UIUtils.createControlGroup(
+            Composite settingsGroup = UIUtils.createTitledComposite(
                 dialogArea,
                 PostgreMessages.dialog_query_planner_settings_control_label,
                 2,
-                GridData.FILL_BOTH,
-                0);
+                GridData.FILL_BOTH);
             Button analyseCheckbox = UIUtils.createCheckbox(
                 settingsGroup,
                 PostgreMessages.dialog_query_planner_settings_analyze,

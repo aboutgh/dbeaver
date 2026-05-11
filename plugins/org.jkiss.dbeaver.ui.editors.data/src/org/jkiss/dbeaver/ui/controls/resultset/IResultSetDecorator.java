@@ -1,6 +1,6 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2023 DBeaver Corp and others
+ * Copyright (C) 2010-2026 DBeaver Corp and others
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -35,6 +35,10 @@ public interface IResultSetDecorator {
     long FEATURE_PRESENTATIONS      = 16;
     long FEATURE_LINKS              = 32;
     long FEATURE_COMPACT_FILTERS    = 64;
+    /** Hides the status details label */
+    long FEATURE_COMPACT_STATUS     = 128;
+    /** Decorations should be applied when the result set if activated */
+    long FEATURE_DECORATE_ON_DEMAND = 1 << 8;
 
     long getDecoratorFeatures();
 

@@ -1,6 +1,6 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2023 DBeaver Corp and others
+ * Copyright (C) 2010-2026 DBeaver Corp and others
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
  */
 package org.jkiss.dbeaver.ext.postgresql.model.impls;
 
+import org.jkiss.code.NotNull;
 import org.jkiss.dbeaver.ext.postgresql.model.PostgreDataSource;
 
 /**
@@ -32,6 +33,7 @@ public class PostgreServerCrateDB extends PostgreServerExtensionBase {
         return false;
     }
 
+    @NotNull
     @Override
     public String getServerTypeName() {
         return "CrateDB";
@@ -158,7 +160,7 @@ public class PostgreServerCrateDB extends PostgreServerExtensionBase {
     }
 
     @Override
-    public boolean supportsTeblespaceLocation() {
+    public boolean supportsTablespaceLocation() {
         return false;
     }
 
@@ -199,6 +201,11 @@ public class PostgreServerCrateDB extends PostgreServerExtensionBase {
 
     @Override
     public boolean supportsCopyFromStdIn() {
+        return false;
+    }
+
+    @Override
+    public boolean supportsColumnsRequiring() {
         return false;
     }
 }

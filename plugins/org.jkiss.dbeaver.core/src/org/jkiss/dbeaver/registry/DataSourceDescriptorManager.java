@@ -1,6 +1,6 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2023 DBeaver Corp and others
+ * Copyright (C) 2010-2026 DBeaver Corp and others
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,9 +16,9 @@
  */
 package org.jkiss.dbeaver.registry;
 
+import org.jkiss.code.NotNull;
 import org.jkiss.code.Nullable;
 import org.jkiss.dbeaver.DBException;
-import org.jkiss.dbeaver.core.CoreFeatures;
 import org.jkiss.dbeaver.model.DBPDataSource;
 import org.jkiss.dbeaver.model.DBPDataSourceFolder;
 import org.jkiss.dbeaver.model.DBPObject;
@@ -32,9 +32,11 @@ import org.jkiss.dbeaver.model.rm.RMConstants;
 import org.jkiss.dbeaver.model.runtime.DBRProgressMonitor;
 import org.jkiss.dbeaver.model.struct.DBSObject;
 import org.jkiss.dbeaver.model.struct.cache.DBSObjectCache;
+import org.jkiss.dbeaver.ui.ConnectionFeatures;
 import org.jkiss.dbeaver.ui.UIUtils;
 import org.jkiss.dbeaver.ui.actions.datasource.DataSourceHandler;
 import org.jkiss.dbeaver.ui.dialogs.connection.NewConnectionDialog;
+import org.jkiss.dbeaver.utils.DataSourceUtils;
 
 import java.util.Map;
 
@@ -44,7 +46,7 @@ import java.util.Map;
 public class DataSourceDescriptorManager extends AbstractObjectManager<DataSourceDescriptor> implements DBEObjectMaker<DataSourceDescriptor, DBPObject> {
 
     @Override
-    public long getMakerOptions(DBPDataSource dataSource) {
+    public long getMakerOptions(@NotNull DBPDataSource dataSource) {
         return 0;
     }
 
@@ -55,7 +57,7 @@ public class DataSourceDescriptorManager extends AbstractObjectManager<DataSourc
     }
 
     @Override
-    public boolean canCreateObject(Object container) {
+    public boolean canCreateObject(@NotNull Object container) {
         if (container instanceof DBPProject) {
             return ((DBPProject) container).hasRealmPermission(RMConstants.PERMISSION_PROJECT_DATASOURCES_EDIT);
         }
@@ -63,12 +65,12 @@ public class DataSourceDescriptorManager extends AbstractObjectManager<DataSourc
     }
 
     @Override
-    public boolean canDeleteObject(DataSourceDescriptor object) {
+    public boolean canDeleteObject(@NotNull DataSourceDescriptor object) {
         return object.getProject().hasRealmPermission(RMConstants.PERMISSION_PROJECT_DATASOURCES_EDIT);
     }
 
     @Override
-    public DataSourceDescriptor createNewObject(DBRProgressMonitor monitor, DBECommandContext commandContext, Object container, Object copyFrom, Map<String, Object> options) throws DBException {
+    public DataSourceDescriptor createNewObject(@NotNull DBRProgressMonitor monitor, @NotNull DBECommandContext commandContext, @NotNull Object container, Object copyFrom, @NotNull Map<String, Object> options) throws DBException {
         if (copyFrom != null) {
             DataSourceDescriptor dsTpl = (DataSourceDescriptor) copyFrom;
             DBPDataSourceRegistry registry;
@@ -83,11 +85,11 @@ public class DataSourceDescriptorManager extends AbstractObjectManager<DataSourc
             } else {
                 registry = dsTpl.getRegistry();
             }
-            DataSourceDescriptor dataSource = new DataSourceDescriptor(
-                registry,
+            DataSourceDescriptor dataSource = registry.createDataSource(
                 DataSourceDescriptor.generateNewId(dsTpl.getDriver()),
                 dsTpl.getDriver(),
-                new DBPConnectionConfiguration(dsTpl.getConnectionConfiguration()));
+                new DBPConnectionConfiguration(dsTpl.getConnectionConfiguration())
+            );
             dataSource.copyFrom(dsTpl);
             if (folder != null) {
                 dataSource.setFolder(folder);
@@ -96,15 +98,7 @@ public class DataSourceDescriptorManager extends AbstractObjectManager<DataSourc
                 dataSource.setFolder(dsTpl.getFolder());
             }
             // Generate new name
-            String origName = dsTpl.getName();
-            String newName = origName;
-            for (int i = 0; ; i++) {
-                if (registry.findDataSourceByName(newName) == null) {
-                    break;
-                }
-                newName = origName + " " + (i + 1);
-            }
-            dataSource.setName(newName);
+            dataSource.setName(DataSourceUtils.generateUniqueDataSourceName(registry, dsTpl.getName(), 1));
             registry.addDataSource(dataSource);
         } else {
             UIUtils.asyncExec(() -> NewConnectionDialog.openNewConnectionDialog(UIUtils.getActiveWorkbenchWindow()));
@@ -113,14 +107,14 @@ public class DataSourceDescriptorManager extends AbstractObjectManager<DataSourc
     }
 
     @Override
-    public void deleteObject(DBECommandContext commandContext, final DataSourceDescriptor object, Map<String, Object> options) {
+    public void deleteObject(@NotNull DBECommandContext commandContext, @NotNull final DataSourceDescriptor object, @NotNull Map<String, Object> options) {
         Runnable remover = () -> object.getRegistry().removeDataSource(object);
         if (object.isConnected()) {
             DataSourceHandler.disconnectDataSource(object, remover);
         } else {
             remover.run();
         }
-        CoreFeatures.CONNECTION_DELETE.use(Map.of("driver", object.getDriver().getPreconfiguredId()));
+        ConnectionFeatures.CONNECTION_DELETE.use(Map.of("driver", object.getDriver().getPreconfiguredId()));
     }
 
 

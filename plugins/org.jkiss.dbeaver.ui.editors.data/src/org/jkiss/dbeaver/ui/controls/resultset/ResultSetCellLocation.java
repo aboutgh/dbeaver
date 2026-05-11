@@ -1,6 +1,6 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2023 DBeaver Corp and others
+ * Copyright (C) 2010-2026 DBeaver Corp and others
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,7 +18,9 @@ package org.jkiss.dbeaver.ui.controls.resultset;
 
 import org.jkiss.code.NotNull;
 import org.jkiss.code.Nullable;
+import org.jkiss.dbeaver.model.DBPDataKind;
 import org.jkiss.dbeaver.model.data.DBDAttributeBinding;
+import org.jkiss.dbeaver.model.data.ResultSetValuePath;
 import org.jkiss.utils.ArrayUtils;
 
 import java.util.List;
@@ -31,15 +33,22 @@ public class ResultSetCellLocation {
     private final DBDAttributeBinding attribute;
     private final ResultSetRow row;
     private final int[] rowIndexes;
+    private final ResultSetValuePath valuePath;
 
     public ResultSetCellLocation(@NotNull DBDAttributeBinding attribute, @NotNull ResultSetRow row) {
-        this(attribute, row, null);
+        this(attribute, row, null, null);
     }
 
-    public ResultSetCellLocation(@NotNull DBDAttributeBinding attribute, @NotNull ResultSetRow row, @Nullable int[] rowIndexes) {
+    public ResultSetCellLocation(
+        @NotNull DBDAttributeBinding attribute,
+        @NotNull ResultSetRow row,
+        @Nullable int[] rowIndexes,
+        @Nullable ResultSetValuePath valuePath
+    ) {
         this.attribute = getLeafAttribute(attribute, rowIndexes);
         this.row = row;
         this.rowIndexes = rowIndexes;
+        this.valuePath = valuePath;
     }
 
     @NotNull
@@ -57,11 +66,17 @@ public class ResultSetCellLocation {
         return rowIndexes;
     }
 
+    @Nullable
+    public ResultSetValuePath getValuePath() {
+        return valuePath;
+    }
+
     @NotNull
     public static DBDAttributeBinding getLeafAttribute(@NotNull DBDAttributeBinding attribute, @Nullable int[] indexes) {
+        // this is wrong, because leaf values may not be covered with attr binding in record mode!
         DBDAttributeBinding leaf = attribute;
 
-        if (!ArrayUtils.isEmpty(indexes)) {
+        if (leaf.getDataKind() == DBPDataKind.STRUCT && !ArrayUtils.isEmpty(indexes)) {
             for (int index : indexes) {
                 final List<DBDAttributeBinding> nestedBindings = leaf.getNestedBindings();
                 if (nestedBindings == null || index >= nestedBindings.size()) {

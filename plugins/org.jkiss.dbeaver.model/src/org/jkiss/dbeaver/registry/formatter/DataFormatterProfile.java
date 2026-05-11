@@ -1,6 +1,6 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2023 DBeaver Corp and others
+ * Copyright (C) 2010-2026 DBeaver Corp and others
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,13 +16,18 @@
  */
 package org.jkiss.dbeaver.registry.formatter;
 
+import org.jkiss.code.NotNull;
+import org.jkiss.code.Nullable;
 import org.jkiss.dbeaver.model.data.DBDDataFormatter;
 import org.jkiss.dbeaver.model.data.DBDDataFormatterProfile;
+import org.jkiss.dbeaver.model.impl.data.formatters.NumberFormatSample;
 import org.jkiss.dbeaver.model.impl.preferences.SimplePreferenceStore;
 import org.jkiss.dbeaver.model.preferences.DBPPreferenceListener;
 import org.jkiss.dbeaver.model.preferences.DBPPreferenceStore;
 import org.jkiss.dbeaver.model.preferences.DBPPropertyDescriptor;
 import org.jkiss.dbeaver.model.struct.DBSTypedObject;
+import org.jkiss.dbeaver.model.struct.DBStructUtils;
+import org.jkiss.dbeaver.model.struct.rdb.DBSTableColumn;
 import org.jkiss.dbeaver.utils.PrefUtils;
 import org.jkiss.utils.CommonUtils;
 
@@ -42,38 +47,33 @@ public class DataFormatterProfile implements DBDDataFormatterProfile, DBPPrefere
     public static final String DATAFORMAT_PREFIX = "dataformat."; //$NON-NLS-1$
     public static final String DATAFORMAT_TYPE_PREFIX = DATAFORMAT_PREFIX + "type."; //$NON-NLS-1$
 
-    private DBPPreferenceStore store;
+    private final DBPPreferenceStore store;
     private String name;
     private Locale locale;
 
-    public DataFormatterProfile(String profileName, DBPPreferenceStore store)
-    {
+    public DataFormatterProfile(@NotNull String profileName, @NotNull DBPPreferenceStore store) {
         this.name = profileName;
         this.store = store;
         loadProfile(store);
     }
 
-    private void loadProfile(DBPPreferenceStore store)
-    {
-        {
-            String language = store.getString(PROP_LANGUAGE);
-            String country = store.getString(PROP_COUNTRY);
-            String variant = store.getString(PROP_VARIANT);
-            if (CommonUtils.isEmpty(language)) {
-                this.locale = Locale.getDefault();
-            } else if (CommonUtils.isEmpty(country)) {
-                this.locale = new Locale(language);
-            } else if (CommonUtils.isEmpty(variant)) {
-                this.locale = new Locale(language, country);
-            } else {
-                this.locale = new Locale(language, country, variant);
-            }
+    private void loadProfile(@NotNull DBPPreferenceStore store) {
+        String language = store.getString(PROP_LANGUAGE);
+        String country = store.getString(PROP_COUNTRY);
+        String variant = store.getString(PROP_VARIANT);
+        if (CommonUtils.isEmpty(language)) {
+            this.locale = Locale.getDefault();
+        } else if (CommonUtils.isEmpty(country)) {
+            this.locale = new Locale(language);
+        } else if (CommonUtils.isEmpty(variant)) {
+            this.locale = new Locale(language, country);
+        } else {
+            this.locale = new Locale(language, country, variant);
         }
     }
 
     @Override
-    public void saveProfile(DBPPreferenceStore store) throws IOException
-    {
+    public void saveProfile(@NotNull DBPPreferenceStore store) throws IOException {
         store.setValue(PROP_LANGUAGE, locale.getLanguage());
         store.setValue(PROP_COUNTRY, locale.getCountry());
         store.setValue(PROP_VARIANT, locale.getVariant());
@@ -81,12 +81,13 @@ public class DataFormatterProfile implements DBDDataFormatterProfile, DBPPrefere
         PrefUtils.savePreferenceStore(store);
     }
 
+    @NotNull
     @Override
-    public DBPPreferenceStore getPreferenceStore()
-    {
+    public DBPPreferenceStore getPreferenceStore() {
         return store;
     }
 
+    @NotNull
     @Override
     public String getProfileName()
     {
@@ -94,11 +95,12 @@ public class DataFormatterProfile implements DBDDataFormatterProfile, DBPPrefere
     }
 
     @Override
-    public void setProfileName(String name)
+    public void setProfileName(@NotNull String name)
     {
         this.name = name;
     }
 
+    @NotNull
     @Override
     public Locale getLocale()
     {
@@ -106,13 +108,14 @@ public class DataFormatterProfile implements DBDDataFormatterProfile, DBPPrefere
     }
 
     @Override
-    public void setLocale(Locale locale)
+    public void setLocale(@NotNull Locale locale)
     {
         this.locale = locale;
     }
 
+    @NotNull
     @Override
-    public Map<String, Object> getFormatterProperties(DBPPreferenceStore store, String typeId)
+    public Map<String, Object> getFormatterProperties(@NotNull DBPPreferenceStore store, @NotNull String typeId)
     {
         DataFormatterDescriptor formatter = DataFormatterRegistry.getInstance().getDataFormatter(typeId);
         Map<String, Object> defaultProperties = formatter.getSample().getDefaultProperties(locale);
@@ -130,7 +133,7 @@ public class DataFormatterProfile implements DBDDataFormatterProfile, DBPPrefere
     }
 
     @Override
-    public void setFormatterProperties(DBPPreferenceStore store, String typeId, Map<String, Object> formatterProps)
+    public void setFormatterProperties(@NotNull DBPPreferenceStore store, @NotNull String typeId, @NotNull Map<String, Object> formatterProps)
     {
         DataFormatterDescriptor formatter = DataFormatterRegistry.getInstance().getDataFormatter(typeId);
         for (DBPPropertyDescriptor prop : formatter.getProperties()) {
@@ -167,7 +170,7 @@ public class DataFormatterProfile implements DBDDataFormatterProfile, DBPPrefere
     }
 
     @Override
-    public void reset(DBPPreferenceStore store)
+    public void reset(@NotNull DBPPreferenceStore store)
     {
         if (store instanceof SimplePreferenceStore) {
             // Set all formatter properties to default
@@ -184,8 +187,9 @@ public class DataFormatterProfile implements DBDDataFormatterProfile, DBPPrefere
         loadProfile(store);
     }
 
+    @NotNull
     @Override
-    public DBDDataFormatter createFormatter(String typeId, DBSTypedObject type)
+    public DBDDataFormatter createFormatter(@NotNull String typeId, @Nullable DBSTypedObject type)
         throws ReflectiveOperationException
     {
     	loadProfile(store);
@@ -194,7 +198,6 @@ public class DataFormatterProfile implements DBDDataFormatterProfile, DBPPrefere
         if (descriptor == null) {
             throw new IllegalArgumentException("Formatter '" + typeId + "' not found");
         }
-        DBDDataFormatter formatter = descriptor.createFormatter();
 
         Map<String, Object> defProps = descriptor.getSample().getDefaultProperties(locale);
         Map<String, Object> props = getFormatterProperties(store, typeId);
@@ -202,12 +205,28 @@ public class DataFormatterProfile implements DBDDataFormatterProfile, DBPPrefere
         if (defProps != null && !defProps.isEmpty()) {
             formatterProps.putAll(defProps);
         }
-        if (props != null && !props.isEmpty()) {
+        if (!props.isEmpty()) {
             formatterProps.putAll(props);
         }
+
+        if (DBDDataFormatter.TYPE_NAME_NUMBER.equalsIgnoreCase(typeId)) {
+            boolean excludeIds = CommonUtils.toBoolean(
+                formatterProps.getOrDefault(NumberFormatSample.PROP_EXCLUDE_ID_COLUMNS, false)
+            );
+            if (excludeIds && type instanceof DBSTableColumn column
+                && (DBStructUtils.isPrimaryKey(column) || DBStructUtils.isForeignKey(column))) {
+
+                formatterProps.put(NumberFormatSample.PROP_USE_GROUPING, false);
+            }
+        }
+
+        DBDDataFormatter formatter = descriptor.createFormatter();
         formatter.init(type, locale, formatterProps);
+
         return formatter;
     }
+
+
 
     public static void initDefaultPreferences(DBPPreferenceStore store, Locale locale)
     {

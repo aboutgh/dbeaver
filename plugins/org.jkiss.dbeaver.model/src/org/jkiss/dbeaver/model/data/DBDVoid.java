@@ -1,6 +1,6 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2023 DBeaver Corp and others
+ * Copyright (C) 2010-2026 DBeaver Corp and others
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,16 +16,19 @@
  */
 package org.jkiss.dbeaver.model.data;
 
+import org.jkiss.code.Nullable;
+
 /**
  * Not a value.
  */
-public class DBDVoid implements DBDValue {
+public class DBDVoid implements DBDValue, DBDValueSurrogate {
 
     public static final DBDVoid INSTANCE = new DBDVoid();
 
     private DBDVoid() {
     }
 
+    @Nullable
     @Override
     public Object getRawValue() {
         return null;

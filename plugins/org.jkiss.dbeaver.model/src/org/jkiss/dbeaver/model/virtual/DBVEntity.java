@@ -1,6 +1,6 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2023 DBeaver Corp and others
+ * Copyright (C) 2010-2025 DBeaver Corp and others
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,6 @@
  */
 package org.jkiss.dbeaver.model.virtual;
 
-import org.eclipse.core.runtime.IAdaptable;
 import org.jkiss.code.NotNull;
 import org.jkiss.code.Nullable;
 import org.jkiss.dbeaver.DBException;
@@ -29,6 +28,7 @@ import org.jkiss.dbeaver.model.data.json.JSONUtils;
 import org.jkiss.dbeaver.model.exec.DBCLogicalOperator;
 import org.jkiss.dbeaver.model.preferences.DBPPreferenceStore;
 import org.jkiss.dbeaver.model.runtime.DBRProgressMonitor;
+import org.jkiss.dbeaver.model.runtime.VoidProgressMonitor;
 import org.jkiss.dbeaver.model.struct.*;
 import org.jkiss.utils.CommonUtils;
 
@@ -37,7 +37,7 @@ import java.util.*;
 /**
  * Virtual entity descriptor
  */
-public class DBVEntity extends DBVObject implements DBSEntity, DBPQualifiedObject, DBSDictionary, IAdaptable {
+public class DBVEntity extends DBVObject implements DBSEntity, DBPQualifiedObject, DBSDictionary, DBPAdaptable {
 
     public static final String[] DEFAULT_DESCRIPTION_COLUMN_PATTERNS = {
         "title",
@@ -65,6 +65,8 @@ public class DBVEntity extends DBVObject implements DBSEntity, DBPQualifiedObjec
     private List<DBVEntityForeignKey> entityForeignKeys;
     private List<DBVEntityAttribute> entityAttributes;
     private List<DBVColorOverride> colorOverrides;
+    @Nullable
+    private DBVGroupRowStriping groupRowStriping;
 
     public DBVEntity(@NotNull DBVContainer container, @NotNull String name, String descriptionColumnNames) {
         this.container = container;
@@ -133,6 +135,11 @@ public class DBVEntity extends DBVObject implements DBSEntity, DBPQualifiedObjec
         } else {
             this.colorOverrides = null;
         }
+        if (src.groupRowStriping != null) {
+            this.groupRowStriping = new DBVGroupRowStriping(src.groupRowStriping);
+        } else {
+            this.groupRowStriping = null;
+        }
         super.copyFrom(src);
     }
 
@@ -152,7 +159,7 @@ public class DBVEntity extends DBVObject implements DBSEntity, DBPQualifiedObjec
         for (Map.Entry<String, Map<String, Object>> consObject : JSONUtils.getNestedObjects(map, "constraints")) {
             String consName = consObject.getKey();
             Map<String, Object> consMap = consObject.getValue();
-            String consType = JSONUtils.getString(consMap, "type");
+            //String consType = JSONUtils.getString(consMap, "type");
             DBVEntityConstraint constraint = new DBVEntityConstraint(this, DBSEntityConstraintType.VIRTUAL_KEY, consName);
             boolean useAllColumns = JSONUtils.getBoolean(consMap, "useAllColumns");
             constraint.setUseAllColumns(useAllColumns);
@@ -206,6 +213,7 @@ public class DBVEntity extends DBVObject implements DBSEntity, DBPQualifiedObjec
             }
             addColorOverride(curColor);
         }
+        loadGroupRowStriping(map);
         loadPropertiesFrom(map, "properties");
     }
 
@@ -215,14 +223,14 @@ public class DBVEntity extends DBVObject implements DBSEntity, DBPQualifiedObjec
     }
 
     @Nullable
-    public DBSEntity getRealEntity(DBRProgressMonitor monitor) throws DBException {
+    public DBSEntity getRealEntity(@NotNull DBRProgressMonitor monitor) throws DBException {
         DBSObjectContainer realContainer = container.getRealContainer(monitor);
         if (realContainer == null) {
             return null;
         }
         DBSObject realObject = realContainer.getChild(monitor, name);
-        if (realObject instanceof DBSEntity) {
-            return (DBSEntity) realObject;
+        if (realObject instanceof DBSEntity entity) {
+            return entity;
         }
         log.warn("Entity '" + name + "' not found in '" + realContainer.getName() + "'");
         return null;
@@ -253,11 +261,6 @@ public class DBVEntity extends DBVObject implements DBSEntity, DBPQualifiedObjec
 
     public void setDescription(String description) {
         this.description = description;
-    }
-
-    @Override
-    public boolean isPersisted() {
-        return true;
     }
 
     @NotNull
@@ -391,37 +394,78 @@ public class DBVEntity extends DBVObject implements DBSEntity, DBPQualifiedObjec
         return entityConstraints == null ? Collections.emptyList() : entityConstraints;
     }
 
+    @NotNull
     public DBVEntityConstraint getBestIdentifier() {
         if (entityConstraints == null) {
             entityConstraints = new ArrayList<>();
         }
+
+        for (DBVEntityConstraint constraint : entityConstraints) {
+            if (isComplete(constraint)) {
+                return constraint;
+            }
+        }
+
         if (entityConstraints.isEmpty()) {
             entityConstraints.add(new DBVEntityConstraint(
                 this,
                 DBSEntityConstraintType.VIRTUAL_KEY,
                 "VIRTUAL_PK"));
         }
-        for (DBVEntityConstraint constraint : entityConstraints) {
-            if (constraint.getConstraintType().isUnique() && !CommonUtils.isEmpty(constraint.getAttributes())) {
-                return constraint;
-            }
-        }
-        return entityConstraints.get(0);
+
+        return entityConstraints.getFirst();
     }
 
-    public void addConstraint(DBVEntityConstraint constraint) {
-        addConstraint(constraint, true);
+    /**
+     * Determines whether the given virtual constraint is considered complete,
+     * meaning it can be used as a row identifier.
+     * <p>
+     * A constraint is considered complete if:
+     * <ul>
+     *   <li>its type is unique, and</li>
+     *   <li>it has at least one attribute or uses all columns</li>
+     * </ul>
+     *
+     * @param constraint the virtual entity constraint to check
+     * @return {@code true} if the constraint is unique and structurally complete
+     *
+     * @see org.jkiss.dbeaver.model.data.DBDRowIdentifier#isIncomplete()
+     */
+    public static boolean isComplete(@NotNull DBVEntityConstraint constraint) {
+        return constraint.getConstraintType().isUnique()
+            && (!CommonUtils.isEmpty(constraint.getAttributes()) || constraint.isUseAllColumns());
     }
 
-    public void addConstraint(DBVEntityConstraint constraint, boolean reflect) {
+    public boolean addConstraint(@NotNull DBVEntityConstraint constraint) {
+        return addConstraint(constraint, true);
+    }
+
+    public boolean addConstraint(@NotNull DBVEntityConstraint constraint, boolean reflect) {
         if (entityConstraints == null) {
             entityConstraints = new ArrayList<>();
         }
+
+        String constraintName = constraint.getName();
+        //Avoid duplicates and keep the most complete version.
+        Iterator<DBVEntityConstraint> iterator = entityConstraints.iterator();
+        while (iterator.hasNext()) {
+            DBVEntityConstraint existing = iterator.next();
+            if (Objects.equals(existing.getName(), constraintName)) {
+                if (isComplete(existing)) {
+                    return false;
+                }
+                iterator.remove();
+                break;
+            }
+        }
+
         entityConstraints.add(constraint);
 
         if (reflect) {
             DBUtils.fireObjectUpdate(this, constraint);
         }
+
+        return true;
     }
 
     public void removeConstraint(DBVEntityConstraint constraint) {
@@ -436,8 +480,10 @@ public class DBVEntity extends DBVObject implements DBSEntity, DBPQualifiedObjec
     public synchronized List<DBVEntityForeignKey> getAssociations(@NotNull DBRProgressMonitor monitor) throws DBException {
         // Bind logical foreign keys
         if (entityForeignKeys != null) {
-            for (DBVEntityForeignKey fk : entityForeignKeys) {
-                fk.getRealReferenceConstraint(monitor);
+            if (monitor != null) {
+                for (DBVEntityForeignKey fk : entityForeignKeys) {
+                    fk.getRealReferenceConstraint(monitor);
+                }
             }
         }
         return entityForeignKeys;
@@ -638,6 +684,41 @@ public class DBVEntity extends DBVObject implements DBSEntity, DBPQualifiedObjec
         colorOverrides.clear();
     }
 
+    private void loadGroupRowStriping(@NotNull Map<String, Object> map) {
+        Map<String, Object> grsMap = JSONUtils.getObjectOrNull(map, DBVGroupRowStriping.JSON_KEY);
+        if (grsMap == null || grsMap.isEmpty()) {
+            return;
+        }
+        DBVGroupRowStriping grs = new DBVGroupRowStriping();
+        grs.setEnabled(JSONUtils.getBoolean(grsMap, "enabled"));
+        grs.setSortByGroupColumns(JSONUtils.getBoolean(grsMap, "sort-by-group-columns"));
+        String bg1 = JSONUtils.getString(grsMap, "background1");
+        String bg2 = JSONUtils.getString(grsMap, "background2");
+        if (!CommonUtils.isEmpty(bg1)) {
+            grs.setBackgroundColor1(bg1);
+        }
+        if (!CommonUtils.isEmpty(bg2)) {
+            grs.setBackgroundColor2(bg2);
+        }
+        List<String> cols = new ArrayList<>();
+        for (String col : JSONUtils.deserializeStringList(grsMap, "columns")) {
+            if (!CommonUtils.isEmpty(col)) {
+                cols.add(col);
+            }
+        }
+        grs.setColumnNames(cols);
+        groupRowStriping = grs;
+    }
+
+    @Nullable
+    public DBVGroupRowStriping getGroupRowStriping() {
+        return groupRowStriping;
+    }
+
+    public void setGroupRowStriping(@Nullable DBVGroupRowStriping groupRowStriping) {
+        this.groupRowStriping = groupRowStriping;
+    }
+
     @Override
     public boolean hasValuableData() {
         if (!CommonUtils.isEmpty(descriptionColumnNames) ||
@@ -645,6 +726,9 @@ public class DBVEntity extends DBVObject implements DBSEntity, DBPQualifiedObjec
             !CommonUtils.isEmpty(entityForeignKeys) ||
             !CommonUtils.isEmpty(colorOverrides))
         {
+            return true;
+        }
+        if (groupRowStriping != null && groupRowStriping.hasValuableData()) {
             return true;
         }
         if (!CommonUtils.isEmpty(entityConstraints)) {
@@ -666,7 +750,7 @@ public class DBVEntity extends DBVObject implements DBSEntity, DBPQualifiedObjec
 
     @NotNull
     @Override
-    public String getFullyQualifiedName(DBPEvaluationContext context) {
+    public String getFullyQualifiedName(@NotNull DBPEvaluationContext context) {
         return DBUtils.getFullQualifiedName(getDataSource(),
             container instanceof DBVModel ? null : container,
             this);
@@ -686,7 +770,7 @@ public class DBVEntity extends DBVObject implements DBSEntity, DBPQualifiedObjec
     }
 
     @Override
-    public <T> T getAdapter(Class<T> adapter) {
+    public <T> T getAdapter(@NotNull Class<T> adapter) {
         return null;
     }
 
@@ -697,11 +781,102 @@ public class DBVEntity extends DBVObject implements DBSEntity, DBPQualifiedObjec
 
     @NotNull
     @Override
+    public DBSDictionaryAccessor getDictionaryAccessor(
+        @NotNull DBRProgressMonitor monitor,
+        @NotNull DBSEntityAttribute keyColumn,
+        @Nullable List<DBDAttributeValue> restColumns,
+        boolean sortAsc,
+        boolean sortByDesc
+    ) throws DBException {
+        final DBSEntity realEntity = getRealEntity(monitor);
+        if (realEntity instanceof DBSDictionary) {
+            return ((DBSDictionary) realEntity).getDictionaryAccessor(
+                monitor,
+                keyColumn,
+                restColumns,
+                sortAsc,
+                sortByDesc
+            );
+        } else {
+            return emptyDictionaryAccessor;
+        }
+    }
+
+    private static final DBSDictionaryAccessor emptyDictionaryAccessor = new DBSDictionaryAccessor() {
+
+        @NotNull
+        @Override
+        public DBRProgressMonitor getProgressMonitor() {
+            return new VoidProgressMonitor();
+        }
+
+        @Override
+        public boolean isKeyComparable() {
+            return false;
+        }
+        
+        @NotNull
+        @Override
+        public List<DBDLabelValuePair> getValueEntry(@NotNull Object keyValue) {
+            return Collections.emptyList();
+        }
+        
+        @NotNull
+        public List<DBDLabelValuePair> getValues(long offset, long maxResults) {
+            return Collections.emptyList();
+        }
+
+        @NotNull
+        public List<DBDLabelValuePair> getSimilarValues(
+            @NotNull Object pattern,
+            boolean caseInsensitive,
+            boolean byDesc,
+            long offset,
+            long maxResults
+        ) {
+            return Collections.emptyList();
+        }
+
+        @NotNull
+        @Override
+        public List<DBDLabelValuePair> getValuesNear(
+            @NotNull Object value,
+            boolean isPreceeding,
+            long offset,
+            long maxResults
+        ) {
+            return Collections.emptyList();
+        }
+        
+        @NotNull
+        @Override
+        public List<DBDLabelValuePair> getSimilarValuesNear(
+            @NotNull Object pattern, boolean caseInsensitive, boolean byDesc, 
+            Object value, boolean isPreceeding, 
+            long offset, long maxResults
+        ) {
+            return Collections.emptyList();
+        }
+
+        @Override
+        public void close() {
+            // do nothing
+        }
+
+        @NotNull
+        @Override
+        public List<DBDLabelValuePair> getValues(long offset, int pageSize) {
+            return Collections.emptyList();
+        }
+    };
+
+    @NotNull
+    @Override
     public List<DBDLabelValuePair> getDictionaryEnumeration(
         @NotNull DBRProgressMonitor monitor,
         @NotNull DBSEntityAttribute keyColumn,
-        Object keyPattern,
-        @Nullable List<DBDAttributeValue> preceedingKeys,
+        @Nullable Object keyPattern,
+        @Nullable String searchText, @Nullable List<DBDAttributeValue> preceedingKeys,
         boolean caseInsensitiveSearch,
         boolean sortAsc,
         boolean sortByValue,
@@ -714,6 +889,7 @@ public class DBVEntity extends DBVObject implements DBSEntity, DBPQualifiedObjec
                 monitor,
                 keyColumn,
                 keyPattern,
+                searchText,
                 preceedingKeys,
                 caseInsensitiveSearch,
                 sortAsc,
@@ -728,10 +904,10 @@ public class DBVEntity extends DBVObject implements DBSEntity, DBPQualifiedObjec
 
     @NotNull
     @Override
-    public List<DBDLabelValuePair> getDictionaryValues(@NotNull DBRProgressMonitor monitor, @NotNull DBSEntityAttribute keyColumn, @NotNull List<Object> keyValues, @Nullable List<DBDAttributeValue> preceedingKeys, boolean sortByValue, boolean sortAsc) throws DBException {
+    public List<DBDLabelValuePair> getDictionaryValues(@NotNull DBRProgressMonitor monitor, @NotNull List<DBSEntityAttribute> keyColumns, @NotNull List<Object[]> keyValues, @Nullable List<DBDAttributeValue[]> preceedingKeys, boolean sortByValue, boolean sortAsc, boolean omitNonDescriptive) throws DBException {
         DBSEntity realEntity = getRealEntity(monitor);
-        return realEntity instanceof DBSDictionary ?
-            ((DBSDictionary) realEntity).getDictionaryValues(monitor, keyColumn, keyValues, preceedingKeys, sortByValue, sortAsc) :
+        return realEntity instanceof DBSDictionary dictionary ?
+            dictionary.getDictionaryValues(monitor, keyColumns, keyValues, preceedingKeys, sortByValue, sortAsc, false) :
             Collections.emptyList();
     }
 

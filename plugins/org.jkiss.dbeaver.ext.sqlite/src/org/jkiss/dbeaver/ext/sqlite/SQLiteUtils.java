@@ -1,6 +1,6 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2023 DBeaver Corp and others
+ * Copyright (C) 2010-2025 DBeaver Corp and others
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,34 +17,34 @@
 
 package org.jkiss.dbeaver.ext.sqlite;
 
+import org.jkiss.api.CompositeObjectId;
 import org.jkiss.code.NotNull;
 import org.jkiss.dbeaver.DBException;
 import org.jkiss.dbeaver.Log;
 import org.jkiss.dbeaver.ext.generic.model.GenericSchema;
 import org.jkiss.dbeaver.ext.generic.model.GenericTableBase;
 import org.jkiss.dbeaver.ext.sqlite.model.SQLiteObjectType;
-import org.jkiss.dbeaver.model.DBPEvaluationContext;
+import org.jkiss.dbeaver.ext.sqlite.model.SQLiteTable;
+import org.jkiss.dbeaver.ext.sqlite.edit.SQLiteTableManager;
 import org.jkiss.dbeaver.model.DBUtils;
-import org.jkiss.dbeaver.model.edit.DBEPersistAction;
+import org.jkiss.dbeaver.model.edit.DBECommand;
+import org.jkiss.dbeaver.model.edit.DBECommandContext;
 import org.jkiss.dbeaver.model.exec.jdbc.JDBCPreparedStatement;
 import org.jkiss.dbeaver.model.exec.jdbc.JDBCResultSet;
 import org.jkiss.dbeaver.model.exec.jdbc.JDBCSession;
-import org.jkiss.dbeaver.model.impl.edit.SQLDatabasePersistAction;
-import org.jkiss.dbeaver.model.impl.edit.SQLDatabasePersistActionComment;
 import org.jkiss.dbeaver.model.runtime.DBRProgressMonitor;
-import org.jkiss.dbeaver.model.struct.DBSAttributeBase;
 import org.jkiss.dbeaver.model.struct.DBSObject;
-import org.jkiss.dbeaver.model.struct.DBStructUtils;
+import org.jkiss.dbeaver.runtime.DBWorkbench;
 
-import java.util.Collection;
-import java.util.Collections;
-import java.util.stream.Collectors;
+import java.util.HashMap;
+import java.util.Map;
 
 /**
  * SQLiteUtils
  */
 public class SQLiteUtils {
 
+    public static final CompositeObjectId DRIVER_REFERENCE = new CompositeObjectId("sqlite", "sqlite_jdbc");
     private static final Log log = Log.getLog(SQLiteUtils.class);
 
 
@@ -89,39 +89,10 @@ public class SQLiteUtils {
         }
     }
 
-    public static void createTableAlterActions(@NotNull DBRProgressMonitor monitor, @NotNull String reason, @NotNull GenericTableBase table, @NotNull Collection<DBSAttributeBase> attributes, @NotNull Collection<DBEPersistAction> actions) throws DBException {
-        final String columns = attributes.stream()
-            .map(DBUtils::getQuotedIdentifier)
-            .collect(Collectors.joining(",\n  "));
-
-        actions.add(new SQLDatabasePersistActionComment(
-            table.getDataSource(),
-            reason
-        ));
-        GenericSchema schema = table.getSchema();
-        String schemaPart = schema != null ? DBUtils.getQuotedIdentifier(schema) + "." : "";
-        actions.add(new SQLDatabasePersistAction(
-            "Create temporary table from original table",
-            "CREATE TEMPORARY TABLE "  + schemaPart + "temp AS\nSELECT"
-                + (attributes.isEmpty() ? " *" : "\n  " + columns) + "\nFROM " + DBUtils.getQuotedIdentifier(table)
-        ));
-        actions.add(new SQLDatabasePersistAction(
-            "Drop original table",
-            "\nDROP TABLE " + table.getFullyQualifiedName(DBPEvaluationContext.DML) + ";\n"
-        ));
-        actions.add(new SQLDatabasePersistAction(
-            "Create new table",
-            DBStructUtils.generateTableDDL(monitor, table, Collections.emptyMap(), false)
-        ));
-        actions.add(new SQLDatabasePersistAction(
-            "Insert values from temporary table to new table",
-            "INSERT INTO " + schemaPart + DBUtils.getQuotedIdentifier(table)
-                + (attributes.isEmpty() ? "" : "\n (" + columns + ")") + "\nSELECT"
-                + (attributes.isEmpty() ? " *" : "\n  " + columns) + "\nFROM temp"
-        ));
-        actions.add(new SQLDatabasePersistAction(
-            "Drop temporary table",
-            "\nDROP TABLE "  + schemaPart + "temp"
-        ));
+    public static void makeRecreateTableCommand(DBECommandContext commandContext, SQLiteTable table, DBECommand sourceCommand) {
+        if (DBWorkbench.getPlatform().getEditorsRegistry().getObjectManager(table.getClass()) instanceof SQLiteTableManager tableManager) {
+            Map<String, Object> options = new HashMap<>();
+            tableManager.addRecreateCommand(commandContext, table, options, sourceCommand);
+        }
     }
 }

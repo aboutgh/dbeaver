@@ -1,6 +1,6 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2023 DBeaver Corp and others
+ * Copyright (C) 2010-2026 DBeaver Corp and others
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,48 +16,36 @@
  */
 package org.jkiss.dbeaver.tools.transfer.ui.pages.stream;
 
-import org.eclipse.jface.dialogs.IDialogConstants;
+import org.eclipse.jface.layout.GridDataFactory;
 import org.eclipse.jface.preference.PreferenceDialog;
-import org.eclipse.jface.viewers.*;
 import org.eclipse.swt.SWT;
-import org.eclipse.swt.custom.CLabel;
 import org.eclipse.swt.events.SelectionAdapter;
 import org.eclipse.swt.events.SelectionEvent;
 import org.eclipse.swt.layout.GridData;
-import org.eclipse.swt.widgets.*;
+import org.eclipse.swt.widgets.Button;
+import org.eclipse.swt.widgets.Combo;
+import org.eclipse.swt.widgets.Composite;
+import org.eclipse.swt.widgets.Label;
 import org.eclipse.ui.dialogs.PreferencesUtil;
-import org.jkiss.code.NotNull;
+import org.eclipse.ui.forms.events.ExpansionAdapter;
+import org.eclipse.ui.forms.events.ExpansionEvent;
+import org.eclipse.ui.forms.widgets.ExpandableComposite;
 import org.jkiss.dbeaver.Log;
-import org.jkiss.dbeaver.model.DBIcon;
-import org.jkiss.dbeaver.model.DBPNamedObject;
-import org.jkiss.dbeaver.model.DBValueFormatting;
 import org.jkiss.dbeaver.model.app.DBPDataFormatterRegistry;
 import org.jkiss.dbeaver.model.app.DBPPlatformDesktop;
 import org.jkiss.dbeaver.model.data.DBDDataFormatterProfile;
-import org.jkiss.dbeaver.model.rm.RMConstants;
-import org.jkiss.dbeaver.model.runtime.DBRProgressMonitor;
-import org.jkiss.dbeaver.model.runtime.VoidProgressMonitor;
-import org.jkiss.dbeaver.model.struct.DBSDataContainer;
-import org.jkiss.dbeaver.runtime.DBWorkbench;
 import org.jkiss.dbeaver.runtime.properties.PropertySourceCustom;
-import org.jkiss.dbeaver.tools.transfer.DataTransferPipe;
 import org.jkiss.dbeaver.tools.transfer.internal.DTMessages;
 import org.jkiss.dbeaver.tools.transfer.registry.DataTransferProcessorDescriptor;
-import org.jkiss.dbeaver.tools.transfer.stream.*;
+import org.jkiss.dbeaver.tools.transfer.stream.StreamConsumerSettings;
+import org.jkiss.dbeaver.tools.transfer.stream.StreamTransferConsumer;
 import org.jkiss.dbeaver.tools.transfer.ui.internal.DTUIMessages;
 import org.jkiss.dbeaver.tools.transfer.ui.pages.DataTransferPageNodeSettings;
-import org.jkiss.dbeaver.ui.DBeaverIcons;
-import org.jkiss.dbeaver.ui.SharedTextColors;
+import org.jkiss.dbeaver.ui.BaseThemeSettings;
 import org.jkiss.dbeaver.ui.UIUtils;
-import org.jkiss.dbeaver.ui.controls.CustomComboBoxCellEditor;
-import org.jkiss.dbeaver.ui.controls.TreeContentProvider;
 import org.jkiss.dbeaver.ui.controls.ValueFormatSelector;
-import org.jkiss.dbeaver.ui.dialogs.BaseDialog;
+import org.jkiss.dbeaver.ui.internal.UIConnectionMessages;
 import org.jkiss.dbeaver.ui.properties.PropertyTreeViewer;
-
-import java.lang.reflect.InvocationTargetException;
-import java.util.ArrayList;
-import java.util.List;
 
 public class StreamConsumerPageSettings extends DataTransferPageNodeSettings {
 
@@ -72,7 +60,6 @@ public class StreamConsumerPageSettings extends DataTransferPageNodeSettings {
     private static final int LOB_ENCODING_BINARY = 2;
     private static final int LOB_ENCODING_NATIVE = 3;
 
-    private final List<StreamMappingContainer> mappings = new ArrayList<>();
     private PropertyTreeViewer propsEditor;
     private Combo lobExtractType;
     private Label lobEncodingLabel;
@@ -98,7 +85,34 @@ public class StreamConsumerPageSettings extends DataTransferPageNodeSettings {
         Composite composite = UIUtils.createComposite(parent, 1);
 
         {
-            Composite generalSettings = UIUtils.createControlGroup(composite, DTMessages.data_transfer_wizard_settings_group_general, 5, GridData.HORIZONTAL_ALIGN_BEGINNING, 0);
+            Composite exporterSettings = UIUtils.createComposite(composite, 1);
+            exporterSettings.setLayoutData(new GridData(GridData.FILL_BOTH));
+            //UIUtils.createControlLabel(exporterSettings, DTMessages.data_transfer_wizard_settings_group_exporter);
+
+            propsEditor = new PropertyTreeViewer(exporterSettings, SWT.BORDER);
+            propsEditor.getControl().setLayoutData(GridDataFactory.create(GridData.FILL_BOTH).hint(200, 150).create());
+        }
+        {
+            final ExpandableComposite generalExpander = new ExpandableComposite(
+                composite,
+                ExpandableComposite.CLIENT_INDENT | SWT.SEPARATOR,
+                ExpandableComposite.TWISTIE
+            );
+            generalExpander.setLayoutData(new GridData(SWT.BEGINNING, SWT.BEGINNING, false, false));
+            generalExpander.setText(UIConnectionMessages.dialog_connection_advanced_settings);
+            generalExpander.setFont(BaseThemeSettings.instance.baseFontBold);
+            generalExpander.addExpansionListener(new ExpansionAdapter() {
+                @Override
+                public void expansionStateChanged(ExpansionEvent e) {
+                    UIUtils.resizeShell(parent.getShell());
+                }
+            });
+
+            Composite generalSettings = UIUtils.createComposite(generalExpander, 5);
+            //UIUtils.createControlLabel(generalSettings, DTMessages.data_transfer_wizard_settings_group_general, 5);
+
+            generalExpander.setClient(generalSettings);
+
             {
                 formatProfilesCombo = UIUtils.createLabelCombo(generalSettings, DTMessages.data_transfer_wizard_settings_label_formatting, SWT.DROP_DOWN | SWT.READ_ONLY);
                 GridData gd = new GridData(GridData.HORIZONTAL_ALIGN_BEGINNING);
@@ -106,8 +120,7 @@ public class StreamConsumerPageSettings extends DataTransferPageNodeSettings {
                 formatProfilesCombo.setLayoutData(gd);
                 formatProfilesCombo.addSelectionListener(new SelectionAdapter() {
                     @Override
-                    public void widgetSelected(SelectionEvent e)
-                    {
+                    public void widgetSelected(SelectionEvent e) {
                         if (formatProfilesCombo.getSelectionIndex() > 0) {
                             settings.setFormatterProfile(
                                 dataFormatterRegistry.getCustomProfile(UIUtils.getComboSelection(formatProfilesCombo)));
@@ -140,10 +153,12 @@ public class StreamConsumerPageSettings extends DataTransferPageNodeSettings {
                 editProfileButton.setEnabled(true);
 
                 reloadFormatProfiles();
+            }
 
+            {
                 UIUtils.createControlLabel(generalSettings, DTMessages.data_transfer_wizard_settings_label_binaries);
                 Composite binariesPanel = UIUtils.createComposite(generalSettings, 4);
-                gd = new GridData(GridData.FILL_HORIZONTAL);
+                GridData gd = new GridData(GridData.FILL_HORIZONTAL);
                 gd.horizontalSpan = 4;
                 binariesPanel.setLayoutData(gd);
                 lobExtractType = new Combo(binariesPanel, SWT.DROP_DOWN | SWT.READ_ONLY);
@@ -184,48 +199,14 @@ public class StreamConsumerPageSettings extends DataTransferPageNodeSettings {
 
                 valueFormatSelector = new ValueFormatSelector(generalSettings);
                 valueFormatSelector.select(settings.getValueFormat());
-                valueFormatSelector.addSelectionListener(new SelectionAdapter() {
+                valueFormatSelector.getCombo().addSelectionListener(new SelectionAdapter() {
                     @Override
                     public void widgetSelected(SelectionEvent e) {
                         settings.setValueFormat(valueFormatSelector.getSelection());
                     }
                 });
-
-                {
-                    Composite columnsPanel = UIUtils.createComposite(generalSettings, 5);
-                    columnsPanel.setLayoutData(new GridData(SWT.FILL, SWT.FILL, true, false, 5, 1));
-
-                    UIUtils.createDialogButton(columnsPanel, DTUIMessages.stream_consumer_page_mapping_button_configure, new SelectionAdapter() {
-                        @Override
-                        public void widgetSelected(SelectionEvent event) {
-                            if (mappings.isEmpty()) {
-                                try {
-                                    getWizard().getRunnableContext().run(true, true, monitor -> {
-                                        refreshMappings(monitor);
-                                        UIUtils.asyncExec(() -> new ConfigureColumnsPopup(getShell()).open());
-                                    });
-                                } catch (InvocationTargetException e) {
-                                    DBWorkbench.getPlatformUI().showError(
-                                        DTMessages.stream_transfer_consumer_title_configuration_load_failed,
-                                        DTMessages.stream_transfer_consumer_message_cannot_load_configuration,
-                                        e
-                                    );
-                                } catch (InterruptedException e) {
-                                    log.debug("Canceled by user", e);
-                                }
-                            } else {
-                                new ConfigureColumnsPopup(getShell()).open();
-                            }
-                        }
-                    });
-                }
+                valueFormatSelector.getCombo().setLayoutData(new GridData(SWT.BEGINNING, SWT.BEGINNING, false, false, 4, 1));
             }
-        }
-
-        {
-            Composite exporterSettings = UIUtils.createControlGroup(composite, DTMessages.data_transfer_wizard_settings_group_exporter, 1, GridData.FILL_BOTH, 0);
-
-            propsEditor = new PropertyTreeViewer(exporterSettings, SWT.BORDER);
         }
 
         setControl(composite);
@@ -311,181 +292,6 @@ public class StreamConsumerPageSettings extends DataTransferPageNodeSettings {
         }
 
         return true;
-    }
-
-    private final class ConfigureColumnsPopup extends BaseDialog {
-        private TreeViewer viewer;
-        private CLabel errorLabel;
-
-        public ConfigureColumnsPopup(@NotNull Shell shell) {
-            super(shell, DTUIMessages.stream_consumer_page_mapping_title, null);
-            this.setShellStyle(SWT.TITLE | SWT.MAX | SWT.RESIZE | SWT.APPLICATION_MODAL);
-        }
-
-        @Override
-        protected Composite createDialogArea(Composite parent) {
-            Composite group = super.createDialogArea(parent);
-
-            GridData gd = new GridData(SWT.FILL, SWT.FILL, true, true);
-            gd.widthHint = 400;
-            gd.heightHint = 450;
-
-            Composite composite = UIUtils.createComposite(group, 1);
-            composite.setLayoutData(gd);
-
-            viewer = new TreeViewer(composite, SWT.MULTI | SWT.BORDER | SWT.FULL_SELECTION);
-            viewer.getTree().setLayoutData(new GridData(GridData.FILL_BOTH));
-            viewer.getTree().setLinesVisible(true);
-            viewer.getTree().setHeaderVisible(true);
-            viewer.getTree().setLayoutData(gd);
-
-            viewer.setContentProvider(new TreeContentProvider() {
-                @Override
-                public Object[] getChildren(Object element) {
-                    // We have preloaded the attributes before, so it is 'safe' to use void monitor here
-                    return ((StreamMappingContainer) element).getAttributes(new VoidProgressMonitor()).toArray();
-                }
-
-                @Override
-                public boolean hasChildren(Object element) {
-                    return element instanceof StreamMappingContainer;
-                }
-            });
-
-            {
-                TreeViewerColumn column = new TreeViewerColumn(viewer, SWT.LEFT);
-                column.setLabelProvider(new CellLabelProvider() {
-                    @Override
-                    public void update(ViewerCell cell) {
-                        final Object element = cell.getElement();
-                        final DBPNamedObject object = (DBPNamedObject) element;
-                        cell.setText(object.getName());
-                        cell.setImage(DBeaverIcons.getImage(DBValueFormatting.getObjectImage(object)));
-                    }
-                });
-                column.getColumn().setText(DTUIMessages.stream_consumer_page_mapping_name_column_name);
-            }
-
-            {
-                TreeViewerColumn column = new TreeViewerColumn(viewer, SWT.LEFT);
-                column.setLabelProvider(new CellLabelProvider() {
-                    @Override
-                    public void update(ViewerCell cell) {
-                        final Object element = cell.getElement();
-                        if (element instanceof StreamMappingAttribute) {
-                            final StreamMappingAttribute attribute = (StreamMappingAttribute) element;
-                            cell.setText(attribute.getMappingType().name());
-                            cell.setBackground(attribute.getContainer().isComplete() ? null : UIUtils.getSharedTextColors().getColor(SharedTextColors.COLOR_WARNING));
-                        }
-                    }
-                });
-                column.setEditingSupport(new EditingSupport(viewer) {
-                    @Override
-                    protected CellEditor getCellEditor(Object element) {
-                        final String[] items = {
-                            StreamMappingType.export.name(),
-                            StreamMappingType.skip.name()
-                        };
-
-                        return new CustomComboBoxCellEditor(
-                            viewer,
-                            viewer.getTree(),
-                            items,
-                            SWT.DROP_DOWN | SWT.READ_ONLY
-                        );
-                    }
-
-                    @Override
-                    protected boolean canEdit(Object element) {
-                        return element instanceof StreamMappingAttribute;
-                    }
-
-                    @Override
-                    protected Object getValue(Object element) {
-                        return ((StreamMappingAttribute) element).getMappingType().name();
-                    }
-
-                    @Override
-                    protected void setValue(Object element, Object value) {
-                        ((StreamMappingAttribute) element).setMappingType(StreamMappingType.valueOf(value.toString()));
-                        viewer.refresh();
-                        updateCompletion();
-                    }
-                });
-                column.getColumn().setText(DTUIMessages.stream_consumer_page_mapping_mapping_column_name);
-            }
-
-            errorLabel = new CLabel(group, SWT.NONE);
-            errorLabel.setText(DTUIMessages.stream_consumer_page_mapping_label_error_no_columns_selected_text);
-            errorLabel.setImage(DBeaverIcons.getImage(DBIcon.SMALL_ERROR));
-            errorLabel.setLayoutData(new GridData(SWT.LEFT, SWT.CENTER, true, false));
-
-            UIUtils.asyncExec(() -> {
-                viewer.setInput(mappings);
-                viewer.expandAll(true);
-                UIUtils.packColumns(viewer.getTree(), true, new float[]{0.75f, 0.25f});
-                updateCompletion();
-            });
-
-            return group;
-        }
-
-        @Override
-        protected void createButtonsForButtonBar(Composite parent) {
-            createButton(parent, IDialogConstants.OK_ID, IDialogConstants.OK_LABEL, true);
-            createButton(parent, IDialogConstants.CANCEL_ID, IDialogConstants.CANCEL_LABEL, false);
-        }
-
-        @Override
-        protected void okPressed() {
-            final StreamConsumerSettings settings = getWizard().getPageSettings(StreamConsumerPageSettings.this, StreamConsumerSettings.class);
-
-            settings.getDataMappings().clear();
-
-            for (StreamMappingContainer mapping : mappings) {
-                settings.addDataMapping(mapping);
-            }
-
-            super.okPressed();
-        }
-
-        private void updateCompletion() {
-            final boolean isComplete = mappings.stream().allMatch(StreamMappingContainer::isComplete);
-            final Button okButton = getButton(IDialogConstants.OK_ID);
-            errorLabel.setVisible(!isComplete);
-            okButton.setEnabled(isComplete);
-        }
-    }
-
-    private void refreshMappings(@NotNull DBRProgressMonitor monitor) {
-        final StreamConsumerSettings settings = getWizard().getPageSettings(StreamConsumerPageSettings.this, StreamConsumerSettings.class);
-        final List<DataTransferPipe> pipes = getWizard().getSettings().getDataPipes();
-
-        mappings.clear();
-
-        try {
-            monitor.beginTask("Load mappings", pipes.size());
-            for (DataTransferPipe pipe : pipes) {
-                DBSDataContainer source = (DBSDataContainer) pipe.getProducer().getDatabaseObject();
-                StreamMappingContainer mapping = settings.getDataMapping(source);
-
-                if (mapping == null) {
-                    mapping = new StreamMappingContainer(source);
-
-                    for (StreamMappingAttribute attribute : mapping.getAttributes(monitor)) {
-                        attribute.setMappingType(StreamMappingType.export);
-                    }
-                } else {
-                    // Create a copy to avoid direct modifications
-                    mapping = new StreamMappingContainer(mapping);
-                }
-
-                mappings.add(mapping);
-                monitor.worked(1);
-            }
-        } finally {
-            monitor.done();
-        }
     }
 
     @Override

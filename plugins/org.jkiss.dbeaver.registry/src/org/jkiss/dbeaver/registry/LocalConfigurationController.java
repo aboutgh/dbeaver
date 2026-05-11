@@ -1,6 +1,6 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2023 DBeaver Corp and others
+ * Copyright (C) 2010-2026 DBeaver Corp and others
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -34,11 +34,11 @@ public class LocalConfigurationController implements DBConfigurationController {
     protected final Path configFolder;
     private Path legacyConfigFolder;
 
-    public LocalConfigurationController(Path configFolder) {
+    public LocalConfigurationController(@NotNull Path configFolder) {
         this.configFolder = configFolder;
     }
 
-    public void setLegacyConfigFolder(Path legacyConfigFolder) {
+    public void setLegacyConfigFolder(@NotNull Path legacyConfigFolder) {
         this.legacyConfigFolder = legacyConfigFolder;
     }
 
@@ -69,7 +69,7 @@ public class LocalConfigurationController implements DBConfigurationController {
     public void saveConfigurationFile(@NotNull String filePath, @NotNull String data) throws DBException {
         Path localPath = configFolder.resolve(filePath);
         if (!localPath.normalize().startsWith(configFolder)) {
-            throw new DBException("Invalid configuration path");
+            throw new DBException("Invalid configuration path '" + localPath + "'");
         }
         try {
             Path localFolder = localPath.getParent();

@@ -1,6 +1,6 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2023 DBeaver Corp and others
+ * Copyright (C) 2010-2026 DBeaver Corp and others
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@
 
 package org.jkiss.dbeaver.model.struct;
 
+import org.jkiss.code.NotNullWhen;
 import org.jkiss.code.Nullable;
 import org.jkiss.dbeaver.model.DBPDataSource;
 import org.jkiss.dbeaver.model.DBPNamedObject;
@@ -26,8 +27,7 @@ import org.jkiss.dbeaver.model.DBPPersistedObject;
 /**
  * Meta object
  */
-public interface DBSObject extends DBPNamedObject, DBPObjectWithDescription, DBPPersistedObject
-{
+public interface DBSObject extends DBPNamedObject, DBPObjectWithDescription, DBPPersistedObject {
 
     /**
      * Parent object
@@ -35,14 +35,14 @@ public interface DBSObject extends DBPNamedObject, DBPObjectWithDescription, DBP
      * @return parent object or null
      */
     @Nullable
-	DBSObject getParentObject();
+    DBSObject getParentObject();
 
     /**
      * Datasource which this object belongs.
      * It can be null if object was detached from data source.
      * @return datasource reference or null
      */
-    @Nullable
+    @NotNullWhen("!(this instanceof DBPDataSourceContainer)")
     DBPDataSource getDataSource();
 
 }

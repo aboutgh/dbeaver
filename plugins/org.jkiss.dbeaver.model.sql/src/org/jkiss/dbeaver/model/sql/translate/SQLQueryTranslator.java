@@ -1,6 +1,6 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2023 DBeaver Corp and others
+ * Copyright (C) 2010-2026 DBeaver Corp and others
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,17 +16,26 @@
  */
 package org.jkiss.dbeaver.model.sql.translate;
 
+import net.sf.jsqlparser.schema.Table;
+import net.sf.jsqlparser.statement.ReferentialAction;
 import net.sf.jsqlparser.statement.Statement;
+import net.sf.jsqlparser.statement.alter.Alter;
+import net.sf.jsqlparser.statement.alter.AlterExpression;
+import net.sf.jsqlparser.statement.alter.AlterOperation;
 import net.sf.jsqlparser.statement.create.table.ColumnDefinition;
 import net.sf.jsqlparser.statement.create.table.CreateTable;
+import net.sf.jsqlparser.statement.create.table.ForeignKeyIndex;
 import org.jkiss.code.NotNull;
+import org.jkiss.code.Nullable;
 import org.jkiss.dbeaver.DBException;
+import org.jkiss.dbeaver.model.impl.preferences.SimplePreferenceStore;
 import org.jkiss.dbeaver.model.preferences.DBPPreferenceStore;
 import org.jkiss.dbeaver.model.sql.*;
 import org.jkiss.dbeaver.model.sql.format.SQLFormatUtils;
 import org.jkiss.dbeaver.model.sql.parser.SQLScriptParser;
 import org.jkiss.utils.CommonUtils;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -126,116 +135,193 @@ public class SQLQueryTranslator implements SQLTranslator {
         @NotNull Statement statement
     ) {
 
-        List<SQLScriptElement> extraQueries = null;
+        List<SQLScriptElement> extraQueries = new ArrayList<>();
+        List<SQLScriptElement> postExtraQueries = new ArrayList<>();
 
+        boolean defChanged = false;
+        SQLDialect targetDialect = sqlTranslateContext.getTargetDialect();
+        SQLDialectDDLExtension extendedDialect = null;
+        if (targetDialect instanceof SQLDialectDDLExtension) {
+            extendedDialect = (SQLDialectDDLExtension) targetDialect;
+        }
         if (statement instanceof CreateTable) {
-            boolean defChanged = false;
             CreateTable createTable = (CreateTable) statement;
-            SQLDialect targetDialect = sqlTranslateContext.getTargetDialect();
-            SQLDialectDDLExtension extendedDialect = null;
-            if (targetDialect instanceof SQLDialectDDLExtension) {
-                extendedDialect = (SQLDialectDDLExtension) targetDialect;
-            }
 
             if (extendedDialect != null && extendedDialect.supportsCreateIfExists()) {
                 createTable.setIfNotExists(false);
                 defChanged = true;
             }
 
-            for (ColumnDefinition cd : createTable.getColumnDefinitions()) {
-                String newDataType = null;
-                switch (cd.getColDataType().getDataType().toUpperCase(Locale.ENGLISH)) {
-                    case "CLOB":
-                        newDataType = (extendedDialect != null) ? extendedDialect.getClobDataType() : "varchar";
-                        break;
-                    case "TEXT":
-                        String dialectName = targetDialect.getDialectName().toLowerCase();
-                        if (extendedDialect != null && (dialectName.equals("oracle") || dialectName.equals("sqlserver"))) {
-                            newDataType = extendedDialect.getClobDataType();
-                        }
-                        break;
-                    case "TIMESTAMP":
-                        if (extendedDialect != null) {
-                            newDataType = extendedDialect.getTimestampDataType();
-                        }
-                        break;
-                    case SQLConstants.DATA_TYPE_BIGINT:
-                        if (extendedDialect != null) {
-                            newDataType = extendedDialect.getBigIntegerType();
-                        }
-                        break;
-                    case "UUID":
-                        if (extendedDialect != null) {
-                            newDataType = extendedDialect.getUuidDataType();
-                        }
-                        break;
-                    case "BOOLEAN":
-                        if (extendedDialect != null) {
-                            newDataType = extendedDialect.getBooleanDataType();
-                        }
-                        break;
-                    default:
-                        //no action
-                        break;
-                }
-                if (newDataType != null) {
-                    cd.getColDataType().setDataType(newDataType);
-                    defChanged = true;
-                }
-
-                if (!CommonUtils.isEmpty(cd.getColumnSpecs())) {
-                    for (String columnSpec : new ArrayList<>(cd.getColumnSpecs())) {
-                        switch (columnSpec.toUpperCase(Locale.ENGLISH)) {
-                            case "AUTO_INCREMENT":
-                            case "IDENTITY":
-                                if (!targetDialect.supportsColumnAutoIncrement()) {
-                                    String schemaName = createTable.getTable().getSchemaName();
-                                    String sequenceWithoutSchemaName = CommonUtils.escapeIdentifier(createTable.getTable().getName()) +
-                                        "_" + CommonUtils.escapeIdentifier(cd.getColumnName());
-                                    String sequenceName = schemaName == null ? sequenceWithoutSchemaName :
-                                        schemaName + "." + sequenceWithoutSchemaName;
-
-                                    cd.getColumnSpecs().remove(columnSpec);
-                                    cd.getColumnSpecs().add("DEFAULT");
-                                    cd.getColumnSpecs().add("NEXTVAL('" + sequenceName + "')");
-                                    defChanged = true;
-
-                                    String createSeqQuery = "CREATE SEQUENCE " + sequenceName;
-
-                                    if (extraQueries == null) {
-                                        extraQueries = new ArrayList<>();
-                                    }
-                                    extraQueries.add(new SQLQuery(null, createSeqQuery));
-                                } else if (extendedDialect != null) {
-                                    int indexOf = cd.getColumnSpecs().indexOf(columnSpec);
-                                    defChanged = true;
-                                    cd.getColumnSpecs().set(indexOf, extendedDialect.getAutoIncrementKeyword());
-                                }
-                                break;
-                            default:
-                                //no action
-                                break;
+            var columnDefinitions = createTable.getColumnDefinitions();
+            for (ColumnDefinition cd : columnDefinitions) {
+                defChanged |= translateColumnDataType(cd, extendedDialect, targetDialect);
+                defChanged |= translateColumnSpecs(createTable.getTable(), cd, targetDialect, extendedDialect, extraQueries, postExtraQueries);
+            }
+            if (extendedDialect != null &&
+                !extendedDialect.supportsNoActionIndex() &&
+                !CommonUtils.isEmpty(createTable.getIndexes())
+            ) {
+                for (var index : createTable.getIndexes()) {
+                    if (index instanceof ForeignKeyIndex) {
+                        ForeignKeyIndex fkIndex = (ForeignKeyIndex) index;
+                        ReferentialAction ra = fkIndex.getReferentialAction(ReferentialAction.Type.DELETE);
+                        if (ra != null && ReferentialAction.Action.NO_ACTION.equals(ra.getAction())) {
+                            fkIndex.removeReferentialAction(ReferentialAction.Type.DELETE);
+                            defChanged = true;
                         }
                     }
                 }
             }
-            if (defChanged) {
-                String newQueryText = SQLFormatUtils.formatSQL(null,
-                    sqlTranslateContext.getSyntaxManager(),
-                    createTable.toString());
+        } else if (statement instanceof Alter alter) {
+            if (alter.getAlterExpressions() != null) {
+                for (AlterExpression expr : alter.getAlterExpressions()) {
+                    var columnDataTypeList = expr.getColDataTypeList();
+                    if (columnDataTypeList == null) {
+                        continue;
+                    }
+                    if (extendedDialect != null && expr.getOperation().equals(AlterOperation.ALTER)) {
+                        expr.setOperation(AlterOperation.valueOf(extendedDialect.getAlterColumnOperation().toUpperCase()));
+                        expr.hasColumn(extendedDialect.supportsAlterHasColumn());
+                        defChanged = true;
+                    }
 
-                query.setText(newQueryText);
-
-                if (extraQueries == null) {
-                    extraQueries = new ArrayList<>();
+                    for (ColumnDefinition columnDataType : columnDataTypeList) {
+                        defChanged |= translateColumnDataType(columnDataType, extendedDialect, targetDialect);
+                    }
                 }
-                extraQueries.add(query);
             }
         }
-        if (extraQueries == null) {
+        if (defChanged) {
+            String newQueryText = SQLFormatUtils.formatSQL(null,
+                    sqlTranslateContext.getSyntaxManager(),
+                    statement.toString());
+
+            query.setText(newQueryText);
+
+            extraQueries.add(query);
+            extraQueries.addAll(postExtraQueries);
+        }
+        if (extraQueries.isEmpty()) {
             return Collections.singletonList(query);
         }
         return extraQueries;
+    }
+
+    private boolean translateColumnDataType(ColumnDefinition cd, SQLDialectDDLExtension extendedDialect, SQLDialect targetDialect) {
+        String newDataType = null;
+        var colDataType = cd.getColDataType() != null
+            ? cd.getColDataType().getDataType().toUpperCase(Locale.ENGLISH)
+            : "";
+
+        int parenthesisIndex = colDataType.indexOf('(');
+        String baseDataType = colDataType.substring(0, parenthesisIndex > 0 ? parenthesisIndex : colDataType.length()).trim();
+        switch (baseDataType) {
+            case "CLOB" -> newDataType = (extendedDialect != null) ? extendedDialect.getClobDataType() : "varchar";
+            case "NCLOB" -> newDataType = (extendedDialect != null) ? extendedDialect.getNClobDataType() : "varchar";
+            case "BLOB" -> newDataType = (extendedDialect != null) ? extendedDialect.getBlobDataType() : "blob";
+            case "TEXT" -> newDataType = (extendedDialect != null) ? extendedDialect.getTextDataType() : "text";
+            case "TIMESTAMP" -> {
+                if (extendedDialect != null) {
+                    newDataType = extendedDialect.getTimestampDataType();
+                }
+            }
+            case SQLConstants.DATA_TYPE_BIGINT -> {
+                if (extendedDialect != null) {
+                    newDataType = extendedDialect.getBigIntegerType();
+                }
+            }
+            case "UUID" -> {
+                if (extendedDialect != null) {
+                    newDataType = extendedDialect.getUuidDataType();
+                }
+            }
+            case "BOOLEAN" -> {
+                if (extendedDialect != null) {
+                    newDataType = extendedDialect.getBooleanDataType();
+                }
+            }
+            case "SET" -> {
+                if (extendedDialect != null && !extendedDialect.supportsAlterColumnSet()) {
+                    newDataType = "";
+                }
+            }
+            case "NVARCHAR" -> {
+                if (extendedDialect != null) {
+                    newDataType = extendedDialect.getNVarCharDataType() + (parenthesisIndex > 0 ? ' ' + colDataType.substring(parenthesisIndex) : "");
+                }
+            }
+            default -> {
+            }
+            //no action
+        }
+        if (newDataType != null) {
+            cd.getColDataType().setDataType(newDataType);
+            return true;
+        }
+        return false;
+    }
+
+    private boolean translateColumnSpecs(
+        @Nullable Table table,
+        @NotNull ColumnDefinition cd,
+        @NotNull SQLDialect targetDialect,
+        @Nullable SQLDialectDDLExtension extendedDialect,
+        @NotNull List<SQLScriptElement> extraQueries,
+        @NotNull List<SQLScriptElement> postExtraQueries
+    ) {
+        boolean defChanged = false;
+        if (!CommonUtils.isEmpty(cd.getColumnSpecs())) {
+            for (String columnSpec : new ArrayList<>(cd.getColumnSpecs())) {
+                switch (columnSpec.toUpperCase(Locale.ENGLISH)) {
+                    case "AUTO_INCREMENT", "IDENTITY" -> {
+                        if (!targetDialect.supportsColumnAutoIncrement()) {
+                            if (table != null) {
+                                String schemaName = table.getSchemaName();
+                                String sequenceWithoutSchemaName = CommonUtils.escapeIdentifier(table.getName()) +
+                                    "_" + CommonUtils.escapeIdentifier(cd.getColumnName());
+                                String sequenceName = schemaName == null ? sequenceWithoutSchemaName :
+                                    schemaName + "." + sequenceWithoutSchemaName;
+
+                                cd.getColumnSpecs().remove(columnSpec);
+                                cd.getColumnSpecs().add("DEFAULT");
+                                cd.getColumnSpecs().add("NEXTVAL('" + sequenceName + "')");
+                                defChanged = true;
+
+                                String createSeqQuery = "CREATE SEQUENCE " + sequenceName;
+                                extraQueries.add(new SQLQuery(null, createSeqQuery));
+
+                                String linkSeqWithTable =
+                                    "ALTER SEQUENCE " + sequenceName + " OWNED BY " + table.getFullyQualifiedName() + "."
+                                        + cd.getColumnName();
+                                postExtraQueries.add(new SQLQuery(null, linkSeqWithTable));
+                            }
+                        } else if (extendedDialect != null) {
+                            int indexOf = cd.getColumnSpecs().indexOf(columnSpec);
+                            defChanged = true;
+                            cd.getColumnSpecs().set(indexOf, extendedDialect.getAutoIncrementKeyword());
+                        }
+                    }
+                    case "ASCII" -> {
+                        int index = cd.getColumnSpecs().indexOf(columnSpec);
+                        if (index != -1) {
+                            cd.getColumnSpecs().remove(index);
+                            if (extendedDialect != null) {
+                                String charsetModifier
+                                    = extendedDialect.getColumnCharsetModifier(SQLDialectDDLExtension.ColumnCharset.ASCII);
+                                if (!CommonUtils.isEmpty(charsetModifier)) {
+                                    cd.getColumnSpecs().addAll(index, CommonUtils.splitString(charsetModifier, ' '));
+                                }
+                            }
+                            defChanged = true;
+                        }
+                    }
+                    default -> {
+                    }
+                    //no action
+                }
+            }
+        }
+        return defChanged;
     }
 
     /**
@@ -255,5 +341,17 @@ public class SQLQueryTranslator implements SQLTranslator {
      */
     public void setSqlTranslateContext(@NotNull SQLTranslateContext sqlTranslateContext) {
         this.sqlTranslateContext = sqlTranslateContext;
+    }
+
+    @NotNull
+    public static DBPPreferenceStore getDefaultPreferenceStore() {
+        DBPPreferenceStore prefStore = new SimplePreferenceStore() {
+            @Override
+            public void save() throws IOException {
+
+            }
+        };
+        prefStore.setValue(SQLModelPreferences.SQL_FORMAT_FORMATTER, "default");
+        return prefStore;
     }
 }

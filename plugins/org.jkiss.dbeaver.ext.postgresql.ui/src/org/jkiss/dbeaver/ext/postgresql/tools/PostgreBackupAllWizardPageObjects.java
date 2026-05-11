@@ -1,6 +1,6 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2023 DBeaver Corp and others
+ * Copyright (C) 2010-2026 DBeaver Corp and others
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,10 +17,15 @@
 package org.jkiss.dbeaver.ext.postgresql.tools;
 
 import org.eclipse.swt.SWT;
+import org.eclipse.swt.custom.CLabel;
 import org.eclipse.swt.layout.GridData;
-import org.eclipse.swt.widgets.*;
+import org.eclipse.swt.widgets.Composite;
+import org.eclipse.swt.widgets.Label;
+import org.eclipse.swt.widgets.Table;
+import org.eclipse.swt.widgets.TableItem;
 import org.jkiss.code.NotNull;
 import org.jkiss.dbeaver.ext.postgresql.PostgreMessages;
+import org.jkiss.dbeaver.ext.postgresql.PostgreUIUtils;
 import org.jkiss.dbeaver.ext.postgresql.model.PostgreDataSource;
 import org.jkiss.dbeaver.ext.postgresql.model.PostgreDatabase;
 import org.jkiss.dbeaver.ext.postgresql.tasks.PostgreDatabaseBackupAllInfo;
@@ -30,8 +35,10 @@ import org.jkiss.dbeaver.ui.DBeaverIcons;
 import org.jkiss.dbeaver.ui.UIUtils;
 import org.jkiss.utils.CommonUtils;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 public class PostgreBackupAllWizardPageObjects extends AbstractNativeToolWizardPage<PostgreBackupAllWizard> {
 
@@ -51,13 +58,16 @@ public class PostgreBackupAllWizardPageObjects extends AbstractNativeToolWizardP
 
         Composite composite = UIUtils.createPlaceholder(parent, 1);
 
-        Group objectsGroup = UIUtils.createControlGroup(
+        Composite objectsGroup = UIUtils.createTitledComposite(
             composite,
             PostgreMessages.wizard_backup_page_object_group_object,
             1,
-            GridData.FILL_HORIZONTAL,
-            0);
-        objectsGroup.setLayoutData(new GridData(GridData.FILL_BOTH));
+            GridData.FILL_BOTH);
+
+        connInfo = new CLabel(objectsGroup, SWT.WRAP);
+        connInfo.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
+        connInfo.setImage(DBeaverIcons.getImage(DBIcon.DATABASE_DEFAULT));
+
 
         {
             Composite catPanel = UIUtils.createComposite(objectsGroup, 1);
@@ -78,6 +88,8 @@ public class PostgreBackupAllWizardPageObjects extends AbstractNativeToolWizardP
             new Label(buttonsPanel, SWT.NONE).setLayoutData(new GridData(GridData.GRAB_HORIZONTAL));
             createCheckButtons(buttonsPanel, databasesTable);
         }
+
+        PostgreUIUtils.addCompatibilityInfoLabelForForks(composite, wizard, dataSource);
 
         setControl(composite);
     }
@@ -122,6 +134,8 @@ public class PostgreBackupAllWizardPageObjects extends AbstractNativeToolWizardP
             }
         }
         if (dataSource != null) {
+            setConnectionInfo(dataSource.getContainer(), null);
+
             // Database list depends on connection setting
             for (PostgreDatabase database : dataSource.getDatabases()) {
                 TableItem item = new TableItem(databasesTable, SWT.NONE);

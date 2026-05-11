@@ -1,6 +1,6 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2023 DBeaver Corp and others
+ * Copyright (C) 2010-2026 DBeaver Corp and others
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,10 +22,7 @@ import org.jkiss.dbeaver.DBException;
 import org.jkiss.dbeaver.ext.postgresql.PostgreConstants;
 import org.jkiss.dbeaver.model.DBUtils;
 import org.jkiss.dbeaver.model.connection.DBPConnectionBootstrap;
-import org.jkiss.dbeaver.model.exec.DBCException;
-import org.jkiss.dbeaver.model.exec.DBCExecutionContextDefaults;
-import org.jkiss.dbeaver.model.exec.DBCExecutionPurpose;
-import org.jkiss.dbeaver.model.exec.DBExecUtils;
+import org.jkiss.dbeaver.model.exec.*;
 import org.jkiss.dbeaver.model.exec.jdbc.JDBCPreparedStatement;
 import org.jkiss.dbeaver.model.exec.jdbc.JDBCResultSet;
 import org.jkiss.dbeaver.model.exec.jdbc.JDBCSession;
@@ -40,6 +37,7 @@ import java.lang.reflect.InvocationTargetException;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 
 /**
  * PostgreExecutionContext
@@ -47,7 +45,6 @@ import java.util.List;
 public class PostgreExecutionContext extends JDBCExecutionContext implements DBCExecutionContextDefaults<PostgreDatabase, PostgreSchema> {
 
     private final List<String> searchPath = new ArrayList<>();
-    private List<String> defaultSearchPath = new ArrayList<>();
     private String activeUser;
     private long activeSchemaId;
     private boolean isolatedContext;
@@ -70,10 +67,12 @@ public class PostgreExecutionContext extends JDBCExecutionContext implements DBC
 
     @NotNull
     @Override
+    //Get value from cached, used in getCachedDefault()
     public PostgreDatabase getDefaultCatalog() {
         return (PostgreDatabase) getOwnerInstance();
     }
 
+    //Get value from cached, used in getCachedDefault()
     @Override
     public PostgreSchema getDefaultSchema() {
         return getDefaultCatalog().getSchema(activeSchemaId);
@@ -109,7 +108,7 @@ public class PostgreExecutionContext extends JDBCExecutionContext implements DBC
                     setOwnerInstance(catalog);
                     connect(monitor, null, null, null, false);
                 } else {
-                    getDataSource().setActiveDatabase(catalog);
+                    getDataSource().setActiveDatabase(catalog, this);
                 }
                 catalogChanged = true;
             }
@@ -124,7 +123,7 @@ public class PostgreExecutionContext extends JDBCExecutionContext implements DBC
                 }
             }
             if (catalogChanged || schemaChanged) {
-                DBUtils.fireObjectSelectionChange(oldInstance, catalog);
+                DBUtils.fireObjectSelectionChange(oldInstance, catalog, this);
             }
         } catch (DBException e) {
             throw new DBCException("Error changing default database", e);
@@ -140,19 +139,21 @@ public class PostgreExecutionContext extends JDBCExecutionContext implements DBC
         if (activeSchemaId == schema.getObjectId() && !force) {
             return false;
         }
-        if (schema.isExternal()) {
+        if (schema.isExternal() || schema.isSystem()) {
             return false;
         }
 
-        setSearchPath(monitor, schema);
-        setSearchPath(schema.getName());
+        if (!schema.isSystem() && !schema.isPublicSchema()) {
+            setSearchPath(monitor, schema.getName());
+            addSearchPath(schema.getName());
+        }
 
         final PostgreSchema oldActiveSchema = getDefaultSchema();
 
         this.activeSchemaId = schema.getObjectId();
 
         if (reflect) {
-            DBUtils.fireObjectSelectionChange(oldActiveSchema, schema);
+            DBUtils.fireObjectSelectionChange(oldActiveSchema, schema, this);
         }
 
         return true;
@@ -204,11 +205,6 @@ public class PostgreExecutionContext extends JDBCExecutionContext implements DBC
                 this.searchPath.add(PostgreConstants.PUBLIC_SCHEMA_NAME);
             }
 
-            if (defaultSearchPath.isEmpty()) {
-                setUserInTheEndOfThePath(searchPath);
-                defaultSearchPath = new ArrayList<>(searchPath);
-            }
-
             if (useBootstrapSettings) {
                 DBPConnectionBootstrap bootstrap = getBootstrapSettings();
                 String bsSchemaName = bootstrap.getDefaultSchemaName();
@@ -235,34 +231,30 @@ public class PostgreExecutionContext extends JDBCExecutionContext implements DBC
         return searchPath;
     }
 
-    List<String> getDefaultSearchPath() {
-        return defaultSearchPath;
+    private void addSearchPath(String path) {
+        searchPath.clear();
+        searchPath.add(path);
+        if (!path.contains(activeUser)) {
+            searchPath.add(activeUser);
+        }
     }
 
-    private void setSearchPath(DBRProgressMonitor monitor, PostgreSchema schema) throws DBCException {
-        // Construct search path from current search path but put default schema first
-        setSearchPath(monitor, schema.getName());
-    }
-
-    private void setSearchPath(DBRProgressMonitor monitor, String defSchemaName) throws DBCException {
-        List<String> newSearchPath = new ArrayList<>(getDefaultSearchPath());
+    private void setSearchPath(@NotNull DBRProgressMonitor monitor, String defSchemaName) throws DBCException {
+        List<String> newSearchPath = new ArrayList<>(searchPath);
         int schemaIndex = newSearchPath.indexOf(defSchemaName);
-        /*if (schemaIndex == 0 || (schemaIndex == 1 && isUserFirstInPath(newSearchPath))) {
-            // Already default schema
-            return;
-        } else*/
         {
-            if (schemaIndex > 0) {
+            if (schemaIndex < 0) {
                 // Remove from previous position
-                newSearchPath.remove(schemaIndex);
+                newSearchPath.addFirst(defSchemaName);
             }
-            // Add it first
-            newSearchPath.add(0, defSchemaName);
+        }
+        if (Objects.equals(newSearchPath, searchPath)) {
+            return;
         }
 
         StringBuilder spString = new StringBuilder();
         for (String sp : newSearchPath) {
-            if (spString.length() > 0) spString.append(",");
+            if (!spString.isEmpty()) spString.append(",");
             spString.append(DBUtils.getQuotedIdentifier(getDataSource(), sp));
         }
         try (JDBCSession session = openSession(monitor, DBCExecutionPurpose.UTIL, "Change search path")) {
@@ -275,40 +267,6 @@ public class PostgreExecutionContext extends JDBCExecutionContext implements DBC
             });
         } catch (DBException e) {
             throw new DBCException("Error setting search path", e, this);
-        }
-    }
-
-    private static boolean isUserFirstInPath(List<String> newSearchPath) {
-        return !newSearchPath.isEmpty() && newSearchPath.get(0).equals(PostgreConstants.USER_VARIABLE);
-    }
-
-    private void setUserInTheEndOfThePath(List<String> searchPath) {
-        if (CommonUtils.isEmpty(searchPath)) {
-            return;
-        }
-        if (isUserFirstInPath(searchPath)) {
-            searchPath.remove(0);
-            searchPath.add(PostgreConstants.USER_VARIABLE);
-        } else {
-            int userIndex = -1;
-            for (int i = 0; i < searchPath.size(); i++) {
-                if (searchPath.get(i).equals(PostgreConstants.USER_VARIABLE)) {
-                    userIndex = i;
-                    break;
-                }
-            }
-            if (userIndex != -1) {
-                searchPath.remove(userIndex);
-                searchPath.add(PostgreConstants.USER_VARIABLE);
-            }
-        }
-    }
-
-    private void setSearchPath(String path) {
-        searchPath.clear();
-        searchPath.add(path);
-        if (!path.equals(activeUser)) {
-            searchPath.add(activeUser);
         }
     }
 
@@ -329,5 +287,13 @@ public class PostgreExecutionContext extends JDBCExecutionContext implements DBC
 
     public void setIsolatedContext(boolean isolatedContext) {
         this.isolatedContext = isolatedContext;
+    }
+
+    @NotNull
+    @Override
+    public DBCCachedContextDefaults getCachedDefault() {
+        //Method get cashed value
+        String schemaName = (getDefaultSchema() != null) ? getDefaultSchema().getName() : null;
+        return new DBCCachedContextDefaults(getOwnerInstance().getName(), schemaName);
     }
 }

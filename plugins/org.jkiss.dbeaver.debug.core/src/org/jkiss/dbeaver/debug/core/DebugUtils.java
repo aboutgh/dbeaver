@@ -1,7 +1,6 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2023 DBeaver Corp and others
- * Copyright (C) 2017-2018 Alexander Fedorov (alexander.fedorov@jkiss.org)
+ * Copyright (C) 2010-2026 DBeaver Corp and others
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -141,7 +140,7 @@ public class DebugUtils {
             final DBNModel navigatorModel = DBWorkbench.getPlatform().getNavigatorModel();
             DBNDatabaseNode node = navigatorModel.getNodeByObject(new VoidProgressMonitor(), dbsObject, false);
             if (node != null) {
-                return node.getNodeItemPath();
+                return node.getNodeUri();
             }
         }
         if (object instanceof String) {
@@ -201,13 +200,15 @@ public class DebugUtils {
     }
 
     @NotNull
-    public static DBPDataSourceContainer getDataSourceContainer(ILaunchConfiguration configuration) throws CoreException {
+    public static DBPDataSourceContainer getDataSourceContainer(@NotNull ILaunchConfiguration configuration) throws CoreException {
         String projectName = configuration.getAttribute(DBGConstants.ATTR_PROJECT_NAME, (String)null);
         String datasourceId = configuration.getAttribute(DBGConstants.ATTR_DATASOURCE_ID, (String)null);
+        if (datasourceId == null) {
+            throw new CoreException(newErrorStatus("Datasource not specified in debug configuration"));
+        }
         DBPDataSourceContainer datasourceDescriptor = DBUtils.findDataSource(projectName, datasourceId);
         if (datasourceDescriptor == null) {
-            String message = NLS.bind("Unable to find data source with id {0}", datasourceId);
-            throw new CoreException(newErrorStatus(message));
+            throw new CoreException(newErrorStatus("Unable to find data source with id " + datasourceId));
         }
         return datasourceDescriptor;
     }

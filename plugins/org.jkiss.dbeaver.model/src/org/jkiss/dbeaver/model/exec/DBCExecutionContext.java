@@ -1,6 +1,6 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2023 DBeaver Corp and others
+ * Copyright (C) 2010-2025 DBeaver Corp and others
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,15 +31,7 @@ import org.jkiss.dbeaver.model.struct.DBSInstance;
  * Provides access to execution sessions.
  * Usually contains some kind of physical database connection inside
  */
-public interface DBCExecutionContext extends DBPObject, DBPCloseableObject, DBPContextWithAttributes
-{
-    enum InvalidateResult {
-        DISCONNECTED,
-        CONNECTED,
-        RECONNECTED,
-        ALIVE,
-        ERROR
-    }
+public interface DBCExecutionContext extends DBPObject, DBPCloseableObject, DBPContextWithAttributes {
 
     /**
      * Unique context ID. Generated in the moment of context creation and never changes during context lifetime.
@@ -58,6 +50,7 @@ public interface DBCExecutionContext extends DBPObject, DBPCloseableObject, DBPC
     @NotNull
     DBPDataSource getDataSource();
 
+    @NotNull
     DBSInstance getOwnerInstance();
 
     /**
@@ -88,15 +81,36 @@ public interface DBCExecutionContext extends DBPObject, DBPCloseableObject, DBPC
         throws DBException;
 
     /**
-     * Checks context is alive and reconnects if needed.
+     * Invalidates the context in a span of several phases.
+     * <p>
+     * Each phase represents a different stage of the invalidation process:
+     * <ul>
+     *     <li>{@code BEFORE_INVALIDATE} is called before network handlers are invalidated.
+     *     In most cases, it will <b>terminate</b> the underlying connection</li>
+     *     <li>{@code INVALIDATE} is called after network handlers are invalidated.
+     *     In most cases, it will <b>establish</b> the underlying connection</li>
+     *     <li>{@code AFTER_INVALIDATE} is called after the context is invalidated.</li>
+     * </ul>
+     * <p>
+     * The implementation may choose to ignore some of the phases if they are not applicable.
      *
-     * @throws org.jkiss.dbeaver.DBException on any error
      * @param monitor progress monitor
-     * @param closeOnFailure
-     * @return true if reconnect was applied false if connection is alive and nothing was done.
+     * @param phase   invalidation phase
+     * @throws DBException on any error to signal the invalidation was not successful
      */
-    @NotNull
-    InvalidateResult invalidateContext(@NotNull DBRProgressMonitor monitor, boolean closeOnFailure) throws DBException;
+    void invalidateContext(@NotNull DBRProgressMonitor monitor, @NotNull DBCInvalidatePhase phase) throws DBException;
+
+    /**
+     * Invalidates the context by processing all phases. This method will invalidate just the context. For a "complete"
+     * invalidation involving network handlers invalidation, see {@link org.jkiss.dbeaver.runtime.jobs.InvalidateJob}.
+     *
+     * @see #invalidateContext(DBRProgressMonitor, DBCInvalidatePhase)
+     */
+    default void invalidateContext(@NotNull DBRProgressMonitor monitor) throws DBException {
+        invalidateContext(monitor, DBCInvalidatePhase.BEFORE_INVALIDATE);
+        invalidateContext(monitor, DBCInvalidatePhase.INVALIDATE);
+        invalidateContext(monitor, DBCInvalidatePhase.AFTER_INVALIDATE);
+    }
 
     /**
      * Defaults reader/writer.

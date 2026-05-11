@@ -1,6 +1,6 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2023 DBeaver Corp and others
+ * Copyright (C) 2010-2024 DBeaver Corp and others
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,34 +18,32 @@ package org.jkiss.dbeaver.model.websocket.event.resource;
 
 import org.jkiss.code.NotNull;
 import org.jkiss.code.Nullable;
-import org.jkiss.dbeaver.model.rm.RMResource;
+import org.jkiss.dbeaver.model.websocket.WSConstants;
 import org.jkiss.dbeaver.model.websocket.event.WSProjectResourceEvent;
-import org.jkiss.dbeaver.model.websocket.event.WSEventType;
 
 public class WSResourceUpdatedEvent extends WSProjectResourceEvent {
+    public static final String CREATED = "cb_rm_resource_created";
+    public static final String UPDATED = "cb_rm_resource_updated";
+    public static final String DELETED = "cb_rm_resource_deleted";
     @NotNull
     private final String resourcePath;
-    @NotNull
-    private final RMResource[] resourceParsedPath;
     @NotNull
     private final WSResourceProperty property;
     @Nullable
     private final String details;
 
     private WSResourceUpdatedEvent(
-        @NotNull WSEventType eventType,
+        @NotNull String eventId,
         @Nullable String sessionId,
         @Nullable String userId,
         @NotNull String projectId,
         @NotNull String resourcePath,
-        @NotNull RMResource[] resourceParsedPath,
         @NotNull WSResourceProperty property,
         @Nullable String details
         ) {
-        super(eventType, sessionId, userId, projectId);
+        super(eventId, WSConstants.TOPIC_SCRIPTS, sessionId, userId, projectId);
         this.property = property;
         this.resourcePath = resourcePath;
-        this.resourceParsedPath = resourceParsedPath;
         this.details = details;
     }
 
@@ -54,18 +52,16 @@ public class WSResourceUpdatedEvent extends WSProjectResourceEvent {
         @Nullable String userId,
         @NotNull String projectId,
         @NotNull String resourcePath,
-        @NotNull RMResource[] resourceParsedPath,
         @NotNull WSResourceProperty property,
         @Nullable String details
 
     ) {
         return new WSResourceUpdatedEvent(
-            WSEventType.RM_RESOURCE_CREATED,
+            CREATED,
             sessionId,
             userId,
             projectId,
             resourcePath,
-            resourceParsedPath,
             property,
             details
         );
@@ -76,17 +72,15 @@ public class WSResourceUpdatedEvent extends WSProjectResourceEvent {
         @Nullable String userId,
         @NotNull String projectId,
         @NotNull String resourcePath,
-        @NotNull RMResource[] resourceParsedPath,
         @NotNull WSResourceProperty property,
         @Nullable String details
     ) {
         return new WSResourceUpdatedEvent(
-            WSEventType.RM_RESOURCE_UPDATED,
+            UPDATED,
             sessionId,
             userId,
             projectId,
             resourcePath,
-            resourceParsedPath,
             property,
             details
         );
@@ -97,17 +91,15 @@ public class WSResourceUpdatedEvent extends WSProjectResourceEvent {
         @Nullable String userId,
         @NotNull String projectId,
         @NotNull String resourcePath,
-        @NotNull RMResource[] resourceParsedPath,
         @NotNull WSResourceProperty property,
         @Nullable String details
     ) {
         return new WSResourceUpdatedEvent(
-            WSEventType.RM_RESOURCE_DELETED,
+            DELETED,
             sessionId,
             userId,
             projectId,
             resourcePath,
-            resourceParsedPath,
             property,
             details
         );
@@ -121,11 +113,6 @@ public class WSResourceUpdatedEvent extends WSProjectResourceEvent {
     @NotNull
     public String getResourcePath() {
         return resourcePath;
-    }
-
-    @NotNull
-    public Object getResourceParsedPath() {
-        return resourceParsedPath;
     }
 
     @NotNull

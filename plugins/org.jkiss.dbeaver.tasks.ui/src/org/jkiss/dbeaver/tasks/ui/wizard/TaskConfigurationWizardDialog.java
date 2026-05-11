@@ -1,6 +1,6 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2023 DBeaver Corp and others
+ * Copyright (C) 2010-2026 DBeaver Corp and others
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,15 +21,12 @@ import org.eclipse.jface.dialogs.IDialogConstants;
 import org.eclipse.jface.dialogs.IPageChangedListener;
 import org.eclipse.jface.dialogs.PageChangedEvent;
 import org.eclipse.jface.viewers.IStructuredSelection;
+import org.eclipse.jface.viewers.StructuredSelection;
 import org.eclipse.jface.wizard.IWizardPage;
 import org.eclipse.osgi.util.NLS;
-import org.eclipse.swt.SWT;
-import org.eclipse.swt.layout.GridData;
-import org.eclipse.swt.layout.GridLayout;
 import org.eclipse.swt.widgets.Button;
 import org.eclipse.swt.widgets.Composite;
 import org.eclipse.swt.widgets.Control;
-import org.eclipse.swt.widgets.Label;
 import org.eclipse.ui.IWorkbenchWindow;
 import org.jkiss.code.NotNull;
 import org.jkiss.dbeaver.DBException;
@@ -37,6 +34,7 @@ import org.jkiss.dbeaver.Log;
 import org.jkiss.dbeaver.model.app.DBPProject;
 import org.jkiss.dbeaver.model.task.DBTTask;
 import org.jkiss.dbeaver.model.task.DBTTaskSettingsInput;
+import org.jkiss.dbeaver.registry.task.TaskConstants;
 import org.jkiss.dbeaver.registry.task.TaskRegistry;
 import org.jkiss.dbeaver.registry.task.TaskTypeDescriptor;
 import org.jkiss.dbeaver.runtime.DBWorkbench;
@@ -45,15 +43,16 @@ import org.jkiss.dbeaver.tasks.ui.internal.TaskUIMessages;
 import org.jkiss.dbeaver.tasks.ui.registry.TaskUIRegistry;
 import org.jkiss.dbeaver.ui.dialogs.IWizardPageNavigable;
 import org.jkiss.dbeaver.ui.dialogs.MultiPageWizardDialog;
+import org.jkiss.dbeaver.utils.RuntimeUtils;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
+import java.util.*;
 
 /**
  * Task configuration wizard dialog
  */
 public class TaskConfigurationWizardDialog extends MultiPageWizardDialog {
+
+    private static final int SAVE_BUTTON_ID = IDialogConstants.CLIENT_ID + 1;
 
     private static final Log log = Log.getLog(TaskConfigurationWizardDialog.class);
     private TaskConfigurationWizard<?> nestedTaskWizard;
@@ -61,24 +60,31 @@ public class TaskConfigurationWizardDialog extends MultiPageWizardDialog {
     private boolean editMode;
     private boolean selectorMode;
 
-    public TaskConfigurationWizardDialog(IWorkbenchWindow window, TaskConfigurationWizard<?> wizard) {
-        this(window, wizard, null);
+    public TaskConfigurationWizardDialog(
+        @NotNull IWorkbenchWindow window,
+        @NotNull TaskConfigurationWizard<?> wizard
+    ) {
+        this(window, wizard, StructuredSelection.EMPTY, Map.of());
     }
 
-    public TaskConfigurationWizardDialog(IWorkbenchWindow window, TaskConfigurationWizard<?> wizard, IStructuredSelection selection) {
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    public TaskConfigurationWizardDialog(
+        @NotNull IWorkbenchWindow window,
+        @NotNull TaskConfigurationWizard<?> wizard,
+        @NotNull IStructuredSelection selection,
+        @NotNull Map<String, Object> options
+    ) {
         super(window, wizard, selection);
         setFinishButtonLabel(IDialogConstants.PROCEED_LABEL);
 
-        if (selection != null && !selection.isEmpty()) {
-            if (wizard.getSettings() instanceof DBTTaskSettingsInput) {
-                List<Object> inputObjects = new ArrayList<>();
-                for (Object so : selection.toArray()) {
-                    if (wizard.getTaskType().isObjectApplicable(so)) {
-                        inputObjects.add(so);
-                    }
+        if (!selection.isEmpty() && wizard.getSettings() instanceof DBTTaskSettingsInput input) {
+            List<Object> inputObjects = new ArrayList<>();
+            for (Object so : selection.toArray()) {
+                if (wizard.getTaskType().isObjectApplicable(so)) {
+                    inputObjects.add(so);
                 }
-                ((DBTTaskSettingsInput) wizard.getSettings()).loadSettingsFromInput(inputObjects);
             }
+            input.loadSettingsFromInput(inputObjects, options);
         }
 
         addPageChangedListener(new IPageChangedListener() {
@@ -91,12 +97,12 @@ public class TaskConfigurationWizardDialog extends MultiPageWizardDialog {
     }
 
     public TaskConfigurationWizardDialog(IWorkbenchWindow window) {
-        this(window, new NewTaskConfigurationWizard(), null);
+        this(window, new NewTaskConfigurationWizard(), StructuredSelection.EMPTY, Map.of());
     }
 
     @Override
     protected boolean isModalWizard() {
-        return false;
+        return RuntimeUtils.isLinux();
     }
 
     @Override
@@ -104,9 +110,14 @@ public class TaskConfigurationWizardDialog extends MultiPageWizardDialog {
         return (TaskConfigurationWizard) super.getWizard();
     }
 
+    @NotNull
     @Override
-    protected boolean isNavigableWizard() {
-        return !getWizard().isCurrentTaskSaved();
+    protected Set<PageCompletionMark> getShownCompletionMarks() {
+        if (getWizard().isCurrentTaskSaved()) {
+            return EnumSet.noneOf(PageCompletionMark.class);
+        } else {
+            return EnumSet.of(PageCompletionMark.COMPLETE, PageCompletionMark.ERROR);
+        }
     }
 
     @Override
@@ -132,30 +143,18 @@ public class TaskConfigurationWizardDialog extends MultiPageWizardDialog {
     @Override
     protected void createBottomLeftArea(Composite pane) {
         // Task management controls
-        getWizard().createTaskSaveButtons(pane, true, 1);
+        getWizard().createTaskActions(pane, 1);
     }
 
     @Override
-    protected void createButtonsForButtonBar(Composite parent) {
-        {
-            parent.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
-
-            //createTaskSaveButtons(parent, 1);
-
-            Label spacer = new Label(parent, SWT.NONE);
-            spacer.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
-
-            ((GridLayout) parent.getLayout()).numColumns += 1;
+    protected void createButtonsForButtonBar(@NotNull Composite parent) {
+        if (getWizard().isNewTaskEditor() || getNavPagesCount() > 1) {
+            createButton(parent, IDialogConstants.BACK_ID, IDialogConstants.BACK_LABEL, false);
+            createButton(parent, IDialogConstants.NEXT_ID, IDialogConstants.NEXT_LABEL, true);
         }
-
-        {
-            if (getWizard().isNewTaskEditor() || getNavPagesCount() > 1) {
-                createButton(parent, IDialogConstants.BACK_ID, IDialogConstants.BACK_LABEL, false);
-                Button nextButton = createButton(parent, IDialogConstants.NEXT_ID, IDialogConstants.NEXT_LABEL, true);
-                getShell().setDefaultButton(nextButton);
-            }
+        if (getWizard().isTaskSaveEnabled()) {
+            createButton(parent, SAVE_BUTTON_ID, TaskUIMessages.task_configuration_wizard_dialog_button_save, false).setEnabled(false);
         }
-
         super.createButtonsForButtonBar(parent);
     }
 
@@ -177,7 +176,7 @@ public class TaskConfigurationWizardDialog extends MultiPageWizardDialog {
         if (button != null) {
             button.setEnabled(false);
         }
-        getWizard().updateSaveTaskButton(false);
+        getWizard().enableTaskButtons(false);
         super.disableButtonsOnProgress();
     }
 
@@ -187,16 +186,20 @@ public class TaskConfigurationWizardDialog extends MultiPageWizardDialog {
         if (button != null) {
             button.setEnabled(true);
         }
-        getWizard().updateSaveTaskButton(true);
+        getWizard().enableTaskButtons(true);
         super.enableButtonsAfterProgress();
     }
 
     @Override
     protected void buttonPressed(int buttonId) {
+        if (buttonId == SAVE_BUTTON_ID) {
+            getWizard().saveTask();
+            return;
+        }
         if (buttonId == IDialogConstants.NEXT_ID &&
-            getWizard() instanceof NewTaskConfigurationWizard &&
-            ((NewTaskConfigurationWizard)getWizard()).isLastTaskPreconfigPage(getCurrentPage()))
-        {
+            getWizard() instanceof NewTaskConfigurationWizard newTaskWizard &&
+            newTaskWizard.isLastTaskPreconfigPage(getCurrentPage())
+        ) {
             if (!getCurrentPage().isPageComplete()) {
                 return;
             }
@@ -205,10 +208,10 @@ public class TaskConfigurationWizardDialog extends MultiPageWizardDialog {
                 TaskConfigurationWizard<?> nextTaskWizard = taskEditPage.getTaskWizard();
                 if (nextTaskWizard != nestedTaskWizard) {
                     // Now we need to create real wizard, initialize it and inject in this dialog
-                        nestedTaskWizard = nextTaskWizard;
-                        nestedTaskWizard.addPages();
-                        nestedTaskWizard.initializeWizard(this.getShell().getParent());
-                        setWizard(nestedTaskWizard);
+                    nestedTaskWizard = nextTaskWizard;
+                    nestedTaskWizard.addPages();
+                    nestedTaskWizard.initializeWizard(this.getShell().getParent());
+                    setWizard(nestedTaskWizard);
                 }
             } catch (Exception e) {
                 setErrorMessage(NLS.bind(TaskUIMessages.task_configuration_wizard_dialog_configuration_error, e.getMessage()));
@@ -234,7 +237,18 @@ public class TaskConfigurationWizardDialog extends MultiPageWizardDialog {
     @Override
     public void updateButtons() {
         super.updateButtons();
-        getWizard().updateSaveTaskButtons();
+        var wizard = getWizard();
+        wizard.updateTaskButtons();
+        if (wizard.canFinish()) {
+            Button finishButton = getButton(IDialogConstants.OK_ID);
+            if (finishButton != null && !finishButton.isDisposed()) {
+                getShell().setDefaultButton(finishButton);
+            }
+            Button saveButton = getButton(SAVE_BUTTON_ID);
+            if (saveButton != null && !saveButton.isDisposed()) {
+                saveButton.setEnabled(true);
+            }
+        }
     }
 
     @Override
@@ -284,7 +298,71 @@ public class TaskConfigurationWizardDialog extends MultiPageWizardDialog {
         return getWizard().getStartingPage();
     }
 
-    public static int openNewTaskDialog(IWorkbenchWindow window, DBPProject project, String taskTypeId, IStructuredSelection selection) {
+    /**
+     * Opens new task dialog
+     *
+     * @param window - workbench window to get parent shell from
+     * @param project - project for task execution
+     * @param taskTypeId - task id
+     * @param selection - database objects to apply the task to
+     * @return the return code
+     */
+    public static int openNewTaskDialog(
+        @NotNull IWorkbenchWindow window,
+        @NotNull DBPProject project,
+        @NotNull String taskTypeId,
+        @NotNull IStructuredSelection selection
+    ) {
+        return openNewTaskDialog(window, project, taskTypeId, selection, Map.of());
+    }
+
+    /**
+     * Opens new task dialog
+     *
+     * @param window - workbench window to get parent shell from
+     * @param project - project for task execution
+     * @param taskTypeId - task id
+     * @param selection - database objects to apply the task to
+     * @param options - additional options for the task
+     * @return the return code
+     */
+    public static int openNewTaskDialog(
+        @NotNull IWorkbenchWindow window,
+        @NotNull DBPProject project,
+        @NotNull String taskTypeId,
+        @NotNull IStructuredSelection selection,
+        @NotNull Map<String, Object> options
+    ) {
+        return openNewTaskDialogImpl(window, project, taskTypeId, selection, options, false);
+    }
+
+
+    /**
+     * Opens new task dialog for the tool
+     *
+     * @param window - workbench window to get parent shell from
+     * @param project - project for task execution
+     * @param taskTypeId - task id
+     * @param selection - database objects to apply the tool task to
+     * @return the return code
+     */
+    public static int openNewToolTaskDialog(
+        @NotNull IWorkbenchWindow window,
+        @NotNull DBPProject project,
+        @NotNull String taskTypeId,
+        @NotNull IStructuredSelection selection
+    ) {
+        return openNewTaskDialogImpl(window, project, taskTypeId, selection, Map.of(), true);
+    }
+
+    private static int openNewTaskDialogImpl(
+        @NotNull IWorkbenchWindow window,
+        @NotNull DBPProject project,
+        @NotNull String taskTypeId,
+        @NotNull IStructuredSelection selection,
+        @NotNull Map<String, Object> options,
+        boolean isToolTask
+    ) {
         TaskTypeDescriptor taskType = TaskRegistry.getInstance().getTaskType(taskTypeId);
         if (taskType == null) {
             DBWorkbench.getPlatformUI().showError("Bad task type", "Task type '" + taskTypeId + "' not found");
@@ -293,11 +371,17 @@ public class TaskConfigurationWizardDialog extends MultiPageWizardDialog {
         try {
             DBTTask task = project.getTaskManager().createTemporaryTask(taskType, taskType.getName());
             task.setProperties(new HashMap<>());
+            if (isToolTask) {
+                task.getProperties().put(TaskConstants.TOOL_TASK_PROP, true);
+            }
             DBTTaskConfigurator configurator = TaskUIRegistry.getInstance().createConfigurator(taskType);
-            TaskConfigurationWizard configWizard = configurator.createTaskConfigWizard(task);
-
-            TaskConfigurationWizardDialog dialog = new TaskConfigurationWizardDialog(window, configWizard, selection);
-            return dialog.open();
+            TaskConfigurationWizard<?> configWizard = configurator.createTaskConfigWizard(task);
+            if (configWizard != null) {
+                TaskConfigurationWizardDialog dialog = configWizard.createWizardDialog(window, selection, options);
+                return dialog.open();
+            } else {
+                return IDialogConstants.ABORT_ID;
+            }
         } catch (DBException e) {
             DBWorkbench.getPlatformUI().showError("Task create error", "Error creating task '" + taskTypeId + "'", e);
             return IDialogConstants.CANCEL_ID;

@@ -1,6 +1,6 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2023 DBeaver Corp and others
+ * Copyright (C) 2010-2026 DBeaver Corp and others
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -43,7 +43,7 @@ import java.util.StringJoiner;
 
 public class PostgreJobStepManager extends SQLObjectEditor<PostgreJobStep, PostgreJob> implements DBEObjectRenamer<PostgreJobStep> {
     @Override
-    public long getMakerOptions(DBPDataSource dataSource) {
+    public long getMakerOptions(@NotNull DBPDataSource dataSource) {
         return FEATURE_EDITOR_ON_CREATE;
     }
 
@@ -54,14 +54,24 @@ public class PostgreJobStepManager extends SQLObjectEditor<PostgreJobStep, Postg
     }
 
     @Override
-    protected PostgreJobStep createDatabaseObject(DBRProgressMonitor monitor, DBECommandContext context, Object container, Object copyFrom, Map<String, Object> options) throws DBException {
+    protected PostgreJobStep createDatabaseObject(
+        @NotNull DBRProgressMonitor monitor,
+        @NotNull DBECommandContext context,
+        @NotNull Object container,
+        @Nullable Object copyFrom,
+        @NotNull Map<String, Object> options
+    ) throws DBException {
         final PostgreJob job = (PostgreJob) container;
         final String name = DBUtils.makeNewObjectName(monitor, "Step{0}", job, PostgreJobStep.class, PostgreJob::getStep, context);
         return new PostgreJobStep(job, name);
     }
 
     @Override
-    protected void validateObjectProperties(DBRProgressMonitor monitor, ObjectChangeCommand command, Map<String, Object> options) throws DBException {
+    protected void validateObjectProperties(
+        @NotNull DBRProgressMonitor monitor,
+        @NotNull ObjectChangeCommand command,
+        @NotNull Map<String, Object> options
+    ) throws DBException {
         final PostgreJobStep step = command.getObject();
 
         if (step.getKind() == PostgreJobStep.StepKind.s && (step.getTargetDatabase() == null && CommonUtils.isEmptyTrimmed(step.getRemoteConnectionString()))) {
@@ -78,12 +88,17 @@ public class PostgreJobStepManager extends SQLObjectEditor<PostgreJobStep, Postg
     }
 
     @Override
-    protected StringBuilder getNestedDeclaration(DBRProgressMonitor monitor, PostgreJob owner, DBECommandAbstract<PostgreJobStep> command, Map<String, Object> options) {
+    protected StringBuilder getNestedDeclaration(
+        @NotNull DBRProgressMonitor monitor,
+        @NotNull PostgreJob owner,
+        @NotNull DBECommandAbstract<PostgreJobStep> command,
+        @NotNull Map<String, Object> options
+    ) {
         return new StringBuilder(getCreateDDL(monitor, command.getObject(), options, true));
     }
 
     @Override
-    protected void addObjectCreateActions(DBRProgressMonitor monitor, DBCExecutionContext executionContext, List<DBEPersistAction> actions, ObjectCreateCommand command, Map<String, Object> options) throws DBException {
+    protected void addObjectCreateActions(@NotNull DBRProgressMonitor monitor, @NotNull DBCExecutionContext executionContext, @NotNull List<DBEPersistAction> actions, @NotNull ObjectCreateCommand command, @NotNull Map<String, Object> options) throws DBException {
         actions.add(new SQLDatabasePersistAction(
             "Create step",
             getCreateDDL(monitor, command.getObject(), options, false)
@@ -91,7 +106,7 @@ public class PostgreJobStepManager extends SQLObjectEditor<PostgreJobStep, Postg
     }
 
     @Override
-    protected void addObjectDeleteActions(DBRProgressMonitor monitor, DBCExecutionContext executionContext, List<DBEPersistAction> actions, ObjectDeleteCommand command, Map<String, Object> options) throws DBException {
+    protected void addObjectDeleteActions(@NotNull DBRProgressMonitor monitor, @NotNull DBCExecutionContext executionContext, @NotNull List<DBEPersistAction> actions, @NotNull ObjectDeleteCommand command, @NotNull Map<String, Object> options) throws DBException {
         final PostgreJobStep step = command.getObject();
         actions.add(new SQLDatabasePersistAction(
             "Delete step",
@@ -100,7 +115,7 @@ public class PostgreJobStepManager extends SQLObjectEditor<PostgreJobStep, Postg
     }
 
     @Override
-    protected void addObjectModifyActions(DBRProgressMonitor monitor, DBCExecutionContext executionContext, List<DBEPersistAction> actions, ObjectChangeCommand command, Map<String, Object> options) throws DBException {
+    protected void addObjectModifyActions(@NotNull DBRProgressMonitor monitor, @NotNull DBCExecutionContext executionContext, @NotNull List<DBEPersistAction> actions, @NotNull ObjectChangeCommand command, @NotNull Map<String, Object> options) throws DBException {
         final PostgreJobStep step = command.getObject();
         final StringJoiner values = new StringJoiner(",\n\t");
 
@@ -141,7 +156,7 @@ public class PostgreJobStepManager extends SQLObjectEditor<PostgreJobStep, Postg
     }
 
     @Override
-    protected void addObjectRenameActions(DBRProgressMonitor monitor, DBCExecutionContext executionContext, List<DBEPersistAction> actions, ObjectRenameCommand command, Map<String, Object> options) {
+    protected void addObjectRenameActions(@NotNull DBRProgressMonitor monitor, @NotNull DBCExecutionContext executionContext, @NotNull List<DBEPersistAction> actions, @NotNull ObjectRenameCommand command, @NotNull Map<String, Object> options) {
         final PostgreJobStep step = command.getObject();
         actions.add(new SQLDatabasePersistAction(
             "Rename step",

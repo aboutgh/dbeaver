@@ -1,6 +1,6 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2023 DBeaver Corp and others
+ * Copyright (C) 2010-2026 DBeaver Corp and others
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,8 @@
  */
 package org.jkiss.dbeaver.model.impl.jdbc.data;
 
+import org.jkiss.code.NotNull;
+import org.jkiss.code.Nullable;
 import org.jkiss.dbeaver.model.DBUtils;
 import org.jkiss.dbeaver.model.data.DBDContent;
 import org.jkiss.dbeaver.model.data.DBDContentStorage;
@@ -63,8 +65,8 @@ public abstract class JDBCContentLOB extends JDBCContentAbstract implements DBDC
 
     @Override
     public boolean updateContents(
-        DBRProgressMonitor monitor,
-        DBDContentStorage storage)
+        @NotNull DBRProgressMonitor monitor,
+        @Nullable DBDContentStorage storage)
     {
         if (this.storage != null) {
             if (this.originalStorage != null && this.originalStorage != this.storage) {
@@ -102,8 +104,9 @@ public abstract class JDBCContentLOB extends JDBCContentAbstract implements DBDC
         }
     }
 
+    @NotNull
     @Override
-    public DBDValueCloneable cloneValue(DBRProgressMonitor monitor)
+    public DBDValueCloneable cloneValue(@NotNull DBRProgressMonitor monitor)
         throws DBCException
     {
         JDBCContentLOB copy = createNewContent();

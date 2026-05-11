@@ -1,6 +1,6 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2023 DBeaver Corp and others
+ * Copyright (C) 2010-2026 DBeaver Corp and others
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,17 +16,16 @@
  */
 package org.jkiss.dbeaver.runtime.properties;
 
+import org.jkiss.code.NotNull;
 import org.jkiss.code.Nullable;
 import org.jkiss.dbeaver.Log;
 import org.jkiss.dbeaver.model.DBPNamedObject;
 import org.jkiss.dbeaver.model.DBPObject;
 import org.jkiss.dbeaver.model.DBUtils;
-import org.jkiss.dbeaver.model.edit.DBECommandContext;
-import org.jkiss.dbeaver.model.edit.DBECommandReflector;
-import org.jkiss.dbeaver.model.edit.DBEObjectEditor;
-import org.jkiss.dbeaver.model.edit.DBEObjectMaker;
+import org.jkiss.dbeaver.model.edit.*;
 import org.jkiss.dbeaver.model.edit.prop.DBECommandProperty;
 import org.jkiss.dbeaver.model.edit.prop.DBEPropertyHandler;
+import org.jkiss.dbeaver.model.impl.sql.edit.SQLObjectEditor;
 import org.jkiss.dbeaver.model.rm.RMConstants;
 import org.jkiss.dbeaver.model.runtime.DBRProgressMonitor;
 import org.jkiss.dbeaver.model.struct.DBSObject;
@@ -35,28 +34,28 @@ import org.jkiss.dbeaver.runtime.DBWorkbench;
 import org.jkiss.utils.CommonUtils;
 
 import java.lang.reflect.InvocationTargetException;
+import java.util.Collection;
 import java.util.List;
 
 /**
  * PropertySourceEditable
  */
-public class PropertySourceEditable extends PropertySourceAbstract implements DBPObject, IPropertySourceEditable
-{
+public class PropertySourceEditable extends PropertySourceAbstract implements DBPObject, IPropertySourceEditable {
     private static final Log log = Log.getLog(PropertySourceEditable.class);
 
+    @Nullable
     private DBECommandContext commandContext;
     private PropertyChangeCommand lastCommand = null;
     //private final List<IPropertySourceListener> listeners = new ArrayList<IPropertySourceListener>();
     private final CommandReflector commandReflector = new CommandReflector();
 
-    public PropertySourceEditable(DBECommandContext commandContext, Object sourceObject, Object object)
-    {
+    public PropertySourceEditable(@Nullable DBECommandContext commandContext, @NotNull Object sourceObject, @NotNull Object object) {
         super(sourceObject, object, true);
         this.commandContext = commandContext;
         //this.objectManager = editorInput.getObjectManager(DBEObjectEditor.class);
     }
 
-    public PropertySourceEditable(Object sourceObject, Object object)
+    public PropertySourceEditable(@NotNull Object sourceObject, @NotNull Object object)
     {
         super(sourceObject, object, true);
     }
@@ -68,12 +67,12 @@ public class PropertySourceEditable extends PropertySourceAbstract implements DB
         }
         DBEObjectEditor objectEditor = getObjectEditor(DBEObjectEditor.class);
         return objectEditor != null &&
-            object instanceof DBPObject && objectEditor.canEditObject((DBPObject) object)
+            object instanceof DBPObject po && objectEditor.canEditObject(po)
             && DBWorkbench.getPlatform().getWorkspace().hasRealmPermission(RMConstants.PERMISSION_METADATA_EDITOR);
     }
 
-    private <T> T getObjectEditor(Class<T> managerType)
-    {
+    @Nullable
+    private <T> T getObjectEditor(@NotNull Class<T> managerType) {
         final Object editableValue = getEditableValue();
         if (editableValue == null) {
             return null;
@@ -83,7 +82,7 @@ public class PropertySourceEditable extends PropertySourceAbstract implements DB
             managerType);
     }
 
-    //@Override
+    @Nullable
     public DBECommandContext getCommandContext()
     {
         return commandContext;
@@ -91,9 +90,12 @@ public class PropertySourceEditable extends PropertySourceAbstract implements DB
 
     @Override
     @SuppressWarnings("unchecked")
-    public void setPropertyValue(@Nullable DBRProgressMonitor monitor, Object editableValue, ObjectPropertyDescriptor prop, Object newValue)
-        throws IllegalArgumentException
-    {
+    public void setPropertyValue(
+        @Nullable DBRProgressMonitor monitor,
+        @NotNull Object editableValue,
+        @NotNull ObjectPropertyDescriptor prop,
+        @Nullable Object newValue
+    ) throws IllegalArgumentException {
         if (prop.getValueTransformer() != null) {
             newValue = prop.getValueTransformer().transform(editableValue, newValue);
         }
@@ -102,7 +104,11 @@ public class PropertySourceEditable extends PropertySourceAbstract implements DB
             return;
         }
         if (commandContext != null) {
-            if (lastCommand == null || lastCommand.getObject() != editableValue || lastCommand.property != prop || !commandContext.isDirty()) {
+            if (editableValue instanceof DBSObject dbo && !dbo.isPersisted() && !containCreateCommand(commandContext, dbo)) {
+                // Property change for a new object (command list is empty).
+                // No need to create a new command
+                // Do nothing
+            } else if (lastCommand == null || lastCommand.getObject() != editableValue || lastCommand.property != prop || !commandContext.isDirty()) {
                 // Last command is not applicable (check for isDirty because command queue might be reverted)
                 final DBEObjectEditor<DBPObject> objectEditor = getObjectEditor(DBEObjectEditor.class);
                 if (objectEditor == null) {
@@ -123,10 +129,10 @@ public class PropertySourceEditable extends PropertySourceAbstract implements DB
 
         // If we perform rename then we should refresh object cache
         // To update name-based cache
-        if (prop.isNameProperty() && editableValue instanceof DBSObject) {
+        if (prop.isNameProperty() && editableValue instanceof DBSObject dbsObject) {
             DBEObjectMaker objectManager = getObjectEditor(DBEObjectMaker.class);
             if (objectManager != null) {
-                DBSObjectCache cache = objectManager.getObjectsCache((DBSObject) editableValue);
+                DBSObjectCache cache = objectManager.getObjectsCache(dbsObject);
                 if (cache != null && cache.isFullyCached()) {
                     List<? extends DBSObject> cachedObjects = CommonUtils.copyList(cache.getCachedObjects());
                     cache.setCache(cachedObjects);
@@ -142,11 +148,34 @@ public class PropertySourceEditable extends PropertySourceAbstract implements DB
 */
     }
 
-    private boolean updatePropertyValue(@Nullable DBRProgressMonitor monitor, Object editableValue, ObjectPropertyDescriptor prop, Object value, boolean force)
-        throws IllegalArgumentException
-    {
+    private boolean containCreateCommand(@NotNull DBECommandContext commandContext, @NotNull DBSObject object) {
+        for (DBECommand<?> cmd : commandContext.getFinalCommands()) {
+            if (cmd instanceof SQLObjectEditor.ObjectCreateCommand && cmd.getObject() == object) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean updatePropertyValue(
+        @Nullable DBRProgressMonitor monitor,
+        @NotNull Object editableValue,
+        @NotNull ObjectPropertyDescriptor prop,
+        @Nullable Object value,
+        boolean force
+    ) throws IllegalArgumentException {
         // Write property value
         try {
+            if (Collection.class.isAssignableFrom(prop.getDataType()) && value instanceof String str) {
+                // For collection params convert to array and use first item only.
+                // FIXME: support all array items search by enum/name (see below)
+                List<String> strings = DBUtils.convertArrayStringToList(str);
+                if (strings.isEmpty()) {
+                    value = null;
+                } else {
+                    value = strings.getFirst();
+                }
+            }
             // Check for complex object
             // If value should be a named object then try to obtain it from list provider
             if (value != null && value.getClass() == String.class) {
@@ -155,9 +184,9 @@ public class PropertySourceEditable extends PropertySourceAbstract implements DB
                     boolean found = false;
                     if (items.length > 0) {
                         for (int i = 0, itemsLength = items.length; i < itemsLength; i++) {
-                            if ((items[i] instanceof DBPNamedObject && value.equals(((DBPNamedObject) items[i]).getName())) ||
-                                (items[i] instanceof Enum && value.equals(((Enum) items[i]).name()))
-                                ) {
+                            if ((items[i] instanceof DBPNamedObject namedObject && value.equals(namedObject.getName())) ||
+                                (items[i] instanceof Enum<?> anEnum && value.equals(anEnum.name()))
+                            ) {
                                 value = items[i];
                                 found = true;
                                 break;
@@ -195,14 +224,12 @@ public class PropertySourceEditable extends PropertySourceAbstract implements DB
     }
 
     @Override
-    public boolean isPropertyResettable(Object object, ObjectPropertyDescriptor prop)
-    {
+    public boolean isPropertyResettable(@NotNull Object object, @NotNull ObjectPropertyDescriptor prop) {
         return (lastCommand != null && lastCommand.property == prop && lastCommand.getObject() == object);
     }
 
     @Override
-    public void resetPropertyValue(@Nullable DBRProgressMonitor monitor, Object object, ObjectPropertyDescriptor prop)
-    {
+    public void resetPropertyValue(@Nullable DBRProgressMonitor monitor, @NotNull Object object, @NotNull ObjectPropertyDescriptor prop) {
 //        final DBECommandComposite compositeCommand = (DBECommandComposite)getCommandContext().getUserParams().get(obj);
 //        if (compositeCommand != null) {
 //            final Object value = compositeCommand.getProperty(prop.getId());
@@ -221,15 +248,19 @@ public class PropertySourceEditable extends PropertySourceAbstract implements DB
 
     private class PropertyChangeCommand extends DBECommandProperty<DBPObject> {
         ObjectPropertyDescriptor property;
-        public PropertyChangeCommand(DBPObject editableValue, ObjectPropertyDescriptor property, DBEPropertyHandler<DBPObject> propertyHandler, Object oldValue, Object newValue)
-        {
+        public PropertyChangeCommand(
+            @NotNull DBPObject editableValue,
+            @NotNull ObjectPropertyDescriptor property,
+            @NotNull DBEPropertyHandler<DBPObject> propertyHandler,
+            @Nullable Object oldValue,
+            @Nullable Object newValue
+        ) {
             super(editableValue, propertyHandler, oldValue, newValue);
             this.property = property;
         }
 
         @Override
-        public void updateModel()
-        {
+        public void updateModel() {
             super.updateModel();
             updatePropertyValue(null, getObject(), property, getNewValue(), true);
         }
@@ -238,8 +269,7 @@ public class PropertySourceEditable extends PropertySourceAbstract implements DB
     private class CommandReflector implements DBECommandReflector<DBPObject, PropertyChangeCommand> {
 
         @Override
-        public void redoCommand(PropertyChangeCommand command)
-        {
+        public void redoCommand(@NotNull PropertyChangeCommand command) {
             updatePropertyValue(null, command.getObject(), command.property, command.getNewValue(), false);
 /*
             // Notify listeners
@@ -250,8 +280,7 @@ public class PropertySourceEditable extends PropertySourceAbstract implements DB
         }
 
         @Override
-        public void undoCommand(PropertyChangeCommand command)
-        {
+        public void undoCommand(@NotNull PropertyChangeCommand command) {
             updatePropertyValue(null, command.getObject(), command.property, command.getOldValue(), false);
 /*
             // Notify listeners

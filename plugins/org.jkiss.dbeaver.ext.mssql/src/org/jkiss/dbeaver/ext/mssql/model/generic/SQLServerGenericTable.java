@@ -1,6 +1,6 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2023 DBeaver Corp and others
+ * Copyright (C) 2010-2026 DBeaver Corp and others
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@ package org.jkiss.dbeaver.ext.mssql.model.generic;
 
 import org.jkiss.code.NotNull;
 import org.jkiss.code.Nullable;
+import org.jkiss.dbeaver.DBDatabaseException;
 import org.jkiss.dbeaver.DBException;
 import org.jkiss.dbeaver.Log;
 import org.jkiss.dbeaver.ext.generic.model.GenericStructContainer;
@@ -34,7 +35,6 @@ import org.jkiss.dbeaver.model.exec.jdbc.JDBCSession;
 import org.jkiss.dbeaver.model.impl.jdbc.JDBCUtils;
 import org.jkiss.dbeaver.model.meta.Property;
 import org.jkiss.dbeaver.model.meta.PropertyLength;
-import org.jkiss.dbeaver.model.preferences.DBPPropertySource;
 import org.jkiss.dbeaver.model.runtime.DBRProgressMonitor;
 import org.jkiss.dbeaver.model.struct.DBSObject;
 import org.jkiss.utils.ByteNumberFormat;
@@ -100,7 +100,7 @@ public class SQLServerGenericTable extends GenericTable implements DBPObjectWith
 
     @Override
     @Property(viewable = true, length = PropertyLength.MULTILINE, order = 100)
-    public String getDescription(DBRProgressMonitor monitor) throws DBException {
+    public String getDescription(@NotNull DBRProgressMonitor monitor) throws DBException {
         String description = getDescription();
         if (description != null || !isSqlServer()) {
             return description;
@@ -126,7 +126,7 @@ public class SQLServerGenericTable extends GenericTable implements DBPObjectWith
                 }
 
             } catch (SQLException e) {
-                throw new DBException(e, getDataSource());
+                throw new DBDatabaseException(e, getDataSource());
             }
         }
 
@@ -169,12 +169,6 @@ public class SQLServerGenericTable extends GenericTable implements DBPObjectWith
         return tableSize;
     }
 
-    @Nullable
-    @Override
-    public DBPPropertySource getStatProperties() {
-        return null;
-    }
-
     private void readTableStats(DBRProgressMonitor monitor) {
         if (hasStatistics()) {
             return;
@@ -198,7 +192,7 @@ public class SQLServerGenericTable extends GenericTable implements DBPObjectWith
                 }
             }
         } catch (SQLException | DBCException e) {
-            log.error("Error reading table statistics", e);
+            log.debug("Error reading table statistics", e);
         }
     }
 }

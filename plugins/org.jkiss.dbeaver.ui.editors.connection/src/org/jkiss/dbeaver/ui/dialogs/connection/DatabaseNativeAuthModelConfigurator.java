@@ -1,6 +1,6 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2023 DBeaver Corp and others
+ * Copyright (C) 2010-2026 DBeaver Corp and others
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,21 +17,27 @@
 package org.jkiss.dbeaver.ui.dialogs.connection;
 
 import org.eclipse.swt.SWT;
-import org.eclipse.swt.events.SelectionAdapter;
-import org.eclipse.swt.events.SelectionEvent;
+import org.eclipse.swt.events.SelectionListener;
 import org.eclipse.swt.layout.GridData;
-import org.eclipse.swt.widgets.*;
+import org.eclipse.swt.widgets.Button;
+import org.eclipse.swt.widgets.Composite;
+import org.eclipse.swt.widgets.Label;
+import org.eclipse.swt.widgets.Text;
 import org.jkiss.code.NotNull;
+import org.jkiss.code.Nullable;
 import org.jkiss.dbeaver.model.DBPDataSourceContainer;
 import org.jkiss.dbeaver.model.access.DBAAuthModel;
 import org.jkiss.dbeaver.model.impl.auth.AuthModelDatabaseNative;
+import org.jkiss.dbeaver.registry.ApplicationPolicyProvider;
+import org.jkiss.dbeaver.registry.DataSourceDescriptor;
 import org.jkiss.dbeaver.runtime.DBWorkbench;
 import org.jkiss.dbeaver.runtime.ui.UIServiceSecurity;
-import org.jkiss.dbeaver.ui.DBeaverIcons;
 import org.jkiss.dbeaver.ui.IObjectPropertyConfigurator;
 import org.jkiss.dbeaver.ui.UIIcon;
 import org.jkiss.dbeaver.ui.UIUtils;
+import org.jkiss.dbeaver.ui.actions.DataSourceHandlerUtils;
 import org.jkiss.dbeaver.ui.internal.UIConnectionMessages;
+import org.jkiss.dbeaver.utils.GeneralUtils;
 import org.jkiss.utils.CommonUtils;
 
 /**
@@ -47,16 +53,28 @@ public class DatabaseNativeAuthModelConfigurator implements IObjectPropertyConfi
     protected Text passwordText;
 
     protected Button savePasswordCheck;
-    protected ToolBar userManagementToolbar;
+    protected Button showPasswordButton;
 
     protected DBPDataSourceContainer dataSource;
+
+    protected final boolean canEditCredentialsPerPolicy;
+    protected boolean credentialsPromptMode;
+
+    public DatabaseNativeAuthModelConfigurator() {
+        canEditCredentialsPerPolicy = !ApplicationPolicyProvider.getInstance()
+            .isPolicyEnabled(ApplicationPolicyProvider.POLICY_CREDENTIALS_EDIT);
+    }
+
+    public void setCredentialsPromptMode(boolean credentialsPromptMode) {
+        this.credentialsPromptMode = credentialsPromptMode;
+    }
 
     public void createControl(@NotNull Composite authPanel, DBAAuthModel<?> object, @NotNull Runnable propertyChangeListener) {
         boolean userNameApplicable = true;
         boolean userPasswordApplicable = true;
-        if (object instanceof AuthModelDatabaseNative) {
-            userNameApplicable = ((AuthModelDatabaseNative<?>) object).isUserNameApplicable();
-            userPasswordApplicable = ((AuthModelDatabaseNative<?>) object).isUserPasswordApplicable();
+        if (object instanceof AuthModelDatabaseNative<?> amd) {
+            userNameApplicable = amd.isUserNameApplicable();
+            userPasswordApplicable = amd.isUserPasswordApplicable();
         }
         if (!userNameApplicable) {
             return;
@@ -71,15 +89,14 @@ public class DatabaseNativeAuthModelConfigurator implements IObjectPropertyConfi
         }
     }
 
-    protected void createUserNameControls(Composite authPanel, Runnable propertyChangeListener) {
-
+    protected void createUserNameControls(@NotNull Composite authPanel, @NotNull Runnable propertyChangeListener) {
         usernameText = new Text(authPanel, SWT.BORDER);
         usernameText.setLayoutData(makeAuthControlLayoutData(authPanel));
         usernameText.addModifyListener(e -> propertyChangeListener.run());
     }
 
     @NotNull
-    private GridData makeAuthControlLayoutData(Composite authPanel) {
+    protected GridData makeAuthControlLayoutData(@NotNull Composite authPanel) {
         int fontHeight = UIUtils.getFontHeight(authPanel);
 
         GridData gd = new GridData(GridData.HORIZONTAL_ALIGN_BEGINNING);
@@ -91,27 +108,68 @@ public class DatabaseNativeAuthModelConfigurator implements IObjectPropertyConfi
     public void loadSettings(@NotNull DBPDataSourceContainer dataSource) {
         this.dataSource = dataSource;
 
-        if (this.usernameText != null) {
+        if (dataSource instanceof DataSourceDescriptor dsd && dataSource.isSharedCredentials()) {
+            DataSourceHandlerUtils.resolveSharedCredentials(dsd, null);
+        }
+
+        if (this.usernameText != null && !this.usernameText.isDisposed()) {
             this.usernameText.setText(CommonUtils.notEmpty(dataSource.getConnectionConfiguration().getUserName()));
         }
-        if (this.passwordText != null) {
+        if (this.passwordText != null && !this.passwordText.isDisposed()) {
             this.passwordText.setText(CommonUtils.notEmpty(dataSource.getConnectionConfiguration().getUserPassword()));
-            this.savePasswordCheck.setSelection(dataSource.isSavePassword());
-            this.passwordText.setEnabled(dataSource.isSavePassword());
+            if (canEditCredentialsPerPolicy) {
+                this.passwordText.setEnabled(credentialsPromptMode || dataSource.isSavePassword() || isForceSaveCredentials());
+                if (this.savePasswordCheck != null) {
+                    this.savePasswordCheck.setSelection(dataSource.isSavePassword() || isForceSaveCredentials());
+                }
+                if (showPasswordButton != null) {
+                    this.showPasswordButton.setEnabled(credentialsPromptMode || dataSource.isSavePassword() || isForceSaveCredentials());
+                }
+            } else {
+                if (this.savePasswordCheck != null) {
+                    this.savePasswordCheck.setSelection(false);
+                    this.savePasswordCheck.setEnabled(false);
+                }
+                if (showPasswordButton != null) {
+                    this.showPasswordButton.setEnabled(false);
+                }
+            }
+        }
+        if (dataSource.isTemporary()) {
+            if (this.passwordText != null) {
+                this.passwordText.setEnabled(true);
+            }
+            if (this.savePasswordCheck != null) {
+                this.savePasswordCheck.setSelection(true);
+                this.savePasswordCheck.setEnabled(false);
+            }
+            if (this.showPasswordButton != null) {
+                this.showPasswordButton.setEnabled(false);
+            }
         }
     }
 
     @Override
     public void saveSettings(@NotNull DBPDataSourceContainer dataSource) {
-        if (this.usernameText != null) {
-            dataSource.getConnectionConfiguration().setUserName(this.usernameText.getText());
+        boolean resetPassword = !credentialsPromptMode &&
+            (!canEditCredentialsPerPolicy || (this.savePasswordCheck != null && !this.savePasswordCheck.getSelection()));
+        if (dataSource.isSharedCredentials()) {
+            resetPassword = false;
         }
-        if (this.passwordText != null && isPasswordApplicable()) {
-            dataSource.getConnectionConfiguration().setUserPassword(this.passwordText.getText());
+
+        if (this.usernameText != null) {
+            dataSource.getConnectionConfiguration().setUserName(GeneralUtils.trimAllWhitespaces(this.usernameText.getText()));
+        }
+        if (this.passwordText != null && isPasswordApplicable() && !resetPassword) {
+            dataSource.getConnectionConfiguration().setUserPassword(GeneralUtils.trimAllWhitespaces(this.passwordText.getText()));
         } else {
             dataSource.getConnectionConfiguration().setUserPassword(null);
         }
-        if (this.savePasswordCheck != null) {
+        if (credentialsPromptMode && this.savePasswordCheck == null) {
+            dataSource.setSavePassword(false);
+        } else if (!canEditCredentialsPerPolicy) {
+            dataSource.setSavePassword(dataSource.isSharedCredentials());
+        } else if (this.savePasswordCheck != null) {
             dataSource.setSavePassword(this.savePasswordCheck.getSelection());
         }
     }
@@ -130,7 +188,12 @@ public class DatabaseNativeAuthModelConfigurator implements IObjectPropertyConfi
         return true;
     }
 
-    protected Text createPasswordText(Composite parent, String label) {
+    protected boolean isForceSaveCredentials() {
+        return false;
+    }
+
+    @NotNull
+    protected Text createPasswordText(@NotNull Composite parent, @Nullable String label) {
         if (label != null) {
             UIUtils.createControlLabel(parent, label);
         }
@@ -141,7 +204,7 @@ public class DatabaseNativeAuthModelConfigurator implements IObjectPropertyConfi
         return passwordText;
     }
 
-    protected void createPasswordControls(Composite parent, Runnable propertyChangeListener) {
+    protected void createPasswordControls(@NotNull Composite parent, @NotNull Runnable propertyChangeListener) {
         passwordLabel = UIUtils.createLabel(parent, getPasswordFieldLabel());
         passwordLabel.setLayoutData(new GridData(GridData.HORIZONTAL_ALIGN_BEGINNING));
 
@@ -156,50 +219,56 @@ public class DatabaseNativeAuthModelConfigurator implements IObjectPropertyConfi
         boolean supportsPasswordView = serviceSecurity != null;
 
         int colCount = 1;
-        if (supportsPasswordView) colCount++;
+        if (supportsPasswordView) {
+            colCount++;
+        }
         Composite panel = UIUtils.createComposite(passPlaceholder, colCount);
         GridData gd = new GridData(GridData.HORIZONTAL_ALIGN_BEGINNING);
         panel.setLayoutData(gd);
 
-        savePasswordCheck = UIUtils.createCheckbox(panel,
-            UIConnectionMessages.dialog_connection_wizard_final_checkbox_save_password_locally,
-            dataSource == null || dataSource.isSavePassword());
-        savePasswordCheck.setToolTipText(UIConnectionMessages.dialog_connection_wizard_final_checkbox_save_password_locally);
-        savePasswordCheck.addSelectionListener(new SelectionAdapter() {
-            @Override
-            public void widgetSelected(SelectionEvent e) {
-                passwordText.setEnabled(savePasswordCheck.getSelection());
-            }
-        });
-
-        if (supportsPasswordView) {
-            userManagementToolbar = new ToolBar(panel, SWT.HORIZONTAL);
-            ToolItem showPasswordLabel = new ToolItem(userManagementToolbar, SWT.NONE);
-            showPasswordLabel.setToolTipText(UIConnectionMessages.dialog_connection_auth_label_show_password);
-            showPasswordLabel.setImage(DBeaverIcons.getImage(UIIcon.SHOW_ALL_DETAILS));
-            showPasswordLabel.addSelectionListener(new SelectionAdapter() {
-                @Override
-                public void widgetSelected(SelectionEvent e) {
-                    showPasswordText(serviceSecurity);
+        if (canEditCredentialsPerPolicy) {
+            savePasswordCheck = UIUtils.createCheckbox(
+                panel,
+                UIConnectionMessages.dialog_connection_wizard_final_checkbox_save_password,
+                UIConnectionMessages.dialog_connection_wizard_final_checkbox_save_password,
+                dataSource == null || dataSource.isSavePassword() || isForceSaveCredentials(),
+                1
+            );
+            savePasswordCheck.addSelectionListener(SelectionListener.widgetSelectedAdapter(e -> {
+                passwordText.setEnabled(credentialsPromptMode || savePasswordCheck.getSelection());
+                if (showPasswordButton != null) {
+                    showPasswordButton.setEnabled(credentialsPromptMode || savePasswordCheck.getSelection());
                 }
-            });
+            }));
+            savePasswordCheck.setEnabled(!isForceSaveCredentials());
+        }
+
+        if (supportsPasswordView && canEditCredentialsPerPolicy) {
+            showPasswordButton = UIUtils.createPushButton(
+                panel,
+                null,
+                UIConnectionMessages.dialog_connection_auth_label_show_password,
+                UIIcon.SHOW_ALL_DETAILS, SelectionListener.widgetSelectedAdapter(e -> showPasswordText(serviceSecurity))
+            );
         }
     }
 
+    @NotNull
     protected String getPasswordFieldLabel() {
         return UIConnectionMessages.dialog_connection_auth_label_password;
     }
 
-    private void showPasswordText(UIServiceSecurity serviceSecurity) {
+    private void showPasswordText(@NotNull UIServiceSecurity serviceSecurity) {
         boolean passHidden = (passwordText.getStyle() & SWT.PASSWORD) == SWT.PASSWORD;
         if (passHidden) {
-            if (!serviceSecurity.validatePassword(
-                dataSource.getProject(),
-                "Enter project password",
-                "Enter project password to unlock connection password view",
-                true))
-            {
-                return;
+            if (dataSource.getRegistry().getDataSource(dataSource.getId()) != null) {
+                if (!serviceSecurity.validatePassword(
+                    dataSource.getProject(),
+                    "Enter project password",
+                    "Enter project password to unlock connection password view",
+                    true)) {
+                    return;
+                }
             }
         }
 

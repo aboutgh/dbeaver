@@ -1,6 +1,6 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2023 DBeaver Corp and others
+ * Copyright (C) 2010-2026 DBeaver Corp and others
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,15 +21,15 @@ import org.eclipse.core.runtime.IStatus;
 import org.eclipse.core.runtime.jobs.Job;
 import org.jkiss.code.NotNull;
 import org.jkiss.code.Nullable;
+import org.jkiss.dbeaver.DBException;
 import org.jkiss.dbeaver.model.DBPDataSourceContainer;
 import org.jkiss.dbeaver.model.access.DBAPasswordChangeInfo;
 import org.jkiss.dbeaver.model.connection.DBPAuthInfo;
-import org.jkiss.dbeaver.model.connection.DBPDriver;
-import org.jkiss.dbeaver.model.connection.DBPDriverDependencies;
 import org.jkiss.dbeaver.model.navigator.DBNNode;
+import org.jkiss.dbeaver.model.navigator.fs.DBNPathBase;
 import org.jkiss.dbeaver.model.runtime.DBRProcessDescriptor;
-import org.jkiss.dbeaver.model.runtime.DBRRunnableWithProgress;
 import org.jkiss.dbeaver.model.runtime.DBRRunnableWithResult;
+import org.jkiss.dbeaver.model.runtime.DBRRunnableWithReturn;
 import org.jkiss.dbeaver.model.runtime.load.ILoadService;
 import org.jkiss.dbeaver.model.runtime.load.ILoadVisualizer;
 import org.jkiss.dbeaver.model.struct.DBSObject;
@@ -55,8 +55,8 @@ public interface DBPPlatformUI {
         STOP,
         RETRY,
     }
-    
-    public class UserChoiceResponse {
+
+    class UserChoiceResponse {
         /**
          * index of the user's choice or out of range value (-1) on dialog failure
          */
@@ -73,12 +73,13 @@ public interface DBPPlatformUI {
     UserResponse showError(@NotNull final String title, @Nullable final String message, @NotNull final IStatus status);
     UserResponse showError(@Nullable final String title, @Nullable final String message, @NotNull final Throwable e);
     UserResponse showError(@NotNull final String title, @Nullable final String message);
-    void showNotification(@NotNull final String title, @Nullable final String message, boolean error);
+    void showNotification(@NotNull final String title, @Nullable final String message, boolean error, @Nullable Runnable feedback);
     void showWarningNotification(@NotNull final String title, @Nullable final String message);
     void showMessageBox(@NotNull final String title, @Nullable final String message, boolean error);
     void showWarningMessageBox(@NotNull final String title, @Nullable final String message);
     boolean confirmAction(String title, String message);
     boolean confirmAction(String title, String message, boolean isWarning);
+    boolean confirmAction(@NotNull String title, @NotNull String message, @NotNull String buttonLabel, boolean isWarning);
 
     /**
      * Show user-choice dialog for a user to mandatory select one of the options described with the labels
@@ -104,34 +105,67 @@ public interface DBPPlatformUI {
     UserResponse showErrorStopRetryIgnore(String task, Throwable error, boolean queue);
 
     /**
-     * Notification agent
-     */
-    long getLongOperationTimeout();
-    void notifyAgent(String message, int status);
-
-    /**
      * Asks for user credentials. Returns null if user canceled this action.
      */
-    DBPAuthInfo promptUserCredentials(String prompt, String userName, String userPassword, boolean passwordOnly, boolean showSavePassword);
+    @Nullable
+    DBPAuthInfo promptUserCredentials(
+        @Nullable String prompt,
+        @Nullable String description,
+        @Nullable String userName,
+        @Nullable String userPassword,
+        boolean passwordOnly,
+        boolean showSavePassword);
 
-    DBPAuthInfo promptUserCredentials(String prompt, String userNameLabel, String userName, String passwordLabel, String userPassword, boolean passwordOnly, boolean showSavePassword);
+    @Nullable
+    DBPAuthInfo promptUserCredentials(
+        @Nullable String prompt,
+        @Nullable String description,
+        @NotNull String userNameLabel,
+        @Nullable String userName,
+        @NotNull String passwordLabel,
+        @Nullable String userPassword,
+        boolean passwordOnly,
+        boolean showSavePassword);
+
+    /**
+     * Asks for auth model credentials using a form dialog (for non-native auth models).
+     * Saves credentials into dataSourceContainer on confirmation.
+     * Returns true if the user confirmed, false if the user canceled.
+     */
+    default boolean promptAuthModelCredentials(
+        @NotNull DBPDataSourceContainer dataSourceContainer
+    ) {
+        return false;
+    }
 
     /**
      * Asks for password change. Returns null if user canceled this action.
      */
+    @Nullable
     DBAPasswordChangeInfo promptUserPasswordChange(String prompt, @Nullable String userName, @Nullable String oldPassword, boolean userEditable, boolean oldPasswordVisible);
 
     /**
      * Ask user to enter some property value
      */
-    String promptProperty(String prompt, String defValue);
+    @Nullable
+    String promptProperty(@NotNull String prompt, @Nullable String defValue);
+
+    /**
+     * Ask user to enter some property value
+     */
+    @Nullable
+    String promptProperty(@NotNull String title, @NotNull String prompt, @Nullable String defValue);
+
+    /**
+     * Ask user to enter a multiline value
+     */
+    @Nullable
+    String promptText(@Nullable String title, @Nullable String prompt, @Nullable String defValue);
 
     /**
      * Ask user to accept license agreement
      */
     boolean acceptLicense(String message, String licenseText);
-
-    boolean downloadDriverFiles(DBPDriver driverDescriptor, DBPDriverDependencies dependencies);
 
     /**
      * UI utilities
@@ -147,9 +181,7 @@ public interface DBPPlatformUI {
     void executeProcess(@NotNull DBRProcessDescriptor processDescriptor);
 
     // Execute some action in UI thread
-    void executeWithProgress(@NotNull Runnable runnable);
-
-    void executeWithProgress(@NotNull DBRRunnableWithProgress runnable) throws InvocationTargetException, InterruptedException;
+    void executeInMainThread(@NotNull Runnable runnable);
 
     /**
      * Execute runnable task synchronously while displaying job indicator if needed
@@ -157,22 +189,32 @@ public interface DBPPlatformUI {
     @NotNull
     <T> Future<T> executeWithProgressBlocking(@NotNull String operationDescription, @NotNull DBRRunnableWithResult<Future<T>> runnable);
 
+    /**
+     * Runs task with system progress monitor
+     */
+    <T> T runWithMonitor(@NotNull DBRRunnableWithReturn<T> runnable) throws DBException;
+
+    <T> T runWithProgress(@NotNull DBRRunnableWithReturn<T> runnable) throws DBException, InvocationTargetException, InterruptedException;
+
     @NotNull
     <RESULT> Job createLoadingService(
-        ILoadService<RESULT> loadingService,
-        ILoadVisualizer<RESULT> visualizer);
+        @NotNull ILoadService<RESULT> loadingService,
+        @NotNull ILoadVisualizer<RESULT> visualizer);
 
-    /**
-     * FIXME: this is a hack. We need to call platform (workbench) to refresh part's contexts (enabled commands).
-     * There is no such thing as part in abstract UI. Need some better solution.
-     */
-    void refreshPartState(Object part);
+    void copyTextToClipboard(@NotNull String text, boolean htmlFormat);
 
-    void copyTextToClipboard(String text, boolean htmlFormat);
-
-    void executeShellProgram(String shellCommand);
+    void executeShellProgram(@NotNull String shellCommand);
 
     void showInSystemExplorer(@NotNull String path);
 
+    DBNPathBase openFileSystemSelector(
+        @NotNull String title,
+        boolean folder,
+        int style,
+        boolean binary,
+        String[] filterExt,
+        String defaultValue);
+
     boolean readAndDispatchEvents();
+
 }

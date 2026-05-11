@@ -1,6 +1,6 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2023 DBeaver Corp and others
+ * Copyright (C) 2010-2026 DBeaver Corp and others
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,13 +21,13 @@ import org.eclipse.swt.layout.GridData;
 import org.eclipse.swt.layout.GridLayout;
 import org.eclipse.swt.widgets.Button;
 import org.eclipse.swt.widgets.Composite;
-import org.eclipse.swt.widgets.Group;
 import org.eclipse.swt.widgets.Text;
 import org.jkiss.code.NotNull;
 import org.jkiss.dbeaver.ext.mysql.MySQLConstants;
 import org.jkiss.dbeaver.ext.mysql.ui.internal.MySQLUIMessages;
 import org.jkiss.dbeaver.model.impl.net.SSLHandlerTrustStoreImpl;
 import org.jkiss.dbeaver.model.net.DBWHandlerConfiguration;
+import org.jkiss.dbeaver.registry.configurator.DBPConnectionEditIntention;
 import org.jkiss.dbeaver.ui.UIUtils;
 import org.jkiss.dbeaver.ui.dialogs.net.SSLConfiguratorTrustStoreUI;
 import org.jkiss.utils.CommonUtils;
@@ -58,10 +58,22 @@ public class MySQLSSLConfigurator extends SSLConfiguratorTrustStoreUI {
         }
 
         {
-            Group advGroup = UIUtils.createControlGroup(composite, MySQLUIMessages.mysql_ssl_configurator_legend_advanced, 2, GridData.FILL_HORIZONTAL, -1);
+            Composite advGroup = UIUtils.createTitledComposite(
+                composite,
+                MySQLUIMessages.mysql_ssl_configurator_legend_advanced,
+                2,
+                GridData.FILL_HORIZONTAL
+            );
             requireSSQL = UIUtils.createLabelCheckbox(advGroup, MySQLUIMessages.mysql_ssl_configurator_checkbox_require_ssl, MySQLUIMessages.mysql_ssl_configurator_checkbox_require_ssl_tip, false);
             veryServerCert = UIUtils.createLabelCheckbox(advGroup, MySQLUIMessages.mysql_ssl_configurator_checkbox_verify_server_certificate, MySQLUIMessages.mysql_ssl_configurator_checkbox_verify_server_certificate_tip, true);
             allowPublicKeyRetrieval = UIUtils.createLabelCheckbox(advGroup, MySQLUIMessages.mysql_ssl_configurator_checkbox_allow_public_key, MySQLUIMessages.mysql_ssl_configurator_checkbox_allow_public_key_tip, false);
+        }
+
+        if (this.getEditIntention() == DBPConnectionEditIntention.CREDENTIALS_ONLY) {
+            cipherSuitesText.setEditable(false);
+            requireSSQL.setEnabled(false);
+            veryServerCert.setEnabled(false);
+            allowPublicKeyRetrieval.setEnabled(false);
         }
     }
 

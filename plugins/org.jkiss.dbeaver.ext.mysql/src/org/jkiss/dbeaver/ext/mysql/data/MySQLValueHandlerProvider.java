@@ -1,6 +1,6 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2023 DBeaver Corp and others
+ * Copyright (C) 2010-2026 DBeaver Corp and others
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
  */
 package org.jkiss.dbeaver.ext.mysql.data;
 
+import org.jkiss.code.NotNull;
 import org.jkiss.code.Nullable;
 import org.jkiss.dbeaver.ext.mysql.MySQLConstants;
 import org.jkiss.dbeaver.model.DBPDataKind;
@@ -23,7 +24,6 @@ import org.jkiss.dbeaver.model.DBPDataSource;
 import org.jkiss.dbeaver.model.data.DBDFormatSettings;
 import org.jkiss.dbeaver.model.data.DBDValueHandler;
 import org.jkiss.dbeaver.model.data.DBDValueHandlerProvider;
-import org.jkiss.dbeaver.model.impl.jdbc.data.handlers.JDBCContentValueHandler;
 import org.jkiss.dbeaver.model.impl.jdbc.data.handlers.JDBCObjectValueHandler;
 import org.jkiss.dbeaver.model.struct.DBSTypedObject;
 
@@ -36,8 +36,11 @@ public class MySQLValueHandlerProvider implements DBDValueHandlerProvider {
 
     @Nullable
     @Override
-    public DBDValueHandler getValueHandler(DBPDataSource dataSource, DBDFormatSettings preferences, DBSTypedObject typedObject)
-    {
+    public DBDValueHandler getValueHandler(
+        @NotNull DBPDataSource dataSource,
+        @NotNull DBDFormatSettings preferences,
+        @NotNull DBSTypedObject typedObject
+    ) {
         DBPDataKind dataKind = typedObject.getDataKind();
         if (dataKind == DBPDataKind.DATETIME) {
             return new MySQLDateTimeValueHandler(preferences);
@@ -48,7 +51,7 @@ public class MySQLValueHandlerProvider implements DBDValueHandlerProvider {
         String typeName = typedObject.getTypeName().toLowerCase(Locale.ENGLISH);
         switch (typeName) {
             case MySQLConstants.TYPE_JSON:
-                return JDBCContentValueHandler.INSTANCE;
+                return MySQLJSONValueHandler.INSTANCE;
             case MySQLConstants.TYPE_GEOMETRY:
             case MySQLConstants.TYPE_POINT:
             case MySQLConstants.TYPE_LINESTRING:

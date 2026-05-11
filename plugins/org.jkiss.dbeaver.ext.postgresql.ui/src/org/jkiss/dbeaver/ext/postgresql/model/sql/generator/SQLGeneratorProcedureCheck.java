@@ -1,6 +1,6 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2023 DBeaver Corp and others
+ * Copyright (C) 2010-2024 DBeaver Corp and others
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,18 +16,14 @@
  */
 package org.jkiss.dbeaver.ext.postgresql.model.sql.generator;
 
+import org.jkiss.code.NotNull;
 import org.jkiss.dbeaver.DBException;
 import org.jkiss.dbeaver.model.DBPEvaluationContext;
 import org.jkiss.dbeaver.model.runtime.DBRProgressMonitor;
 import org.jkiss.dbeaver.model.sql.generator.SQLGeneratorProcedure;
 import org.jkiss.dbeaver.model.struct.rdb.DBSProcedure;
 import org.jkiss.dbeaver.model.struct.rdb.DBSProcedureParameter;
-import org.jkiss.dbeaver.model.struct.rdb.DBSProcedureParameterKind;
 import org.jkiss.utils.CommonUtils;
-
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.List;
 
 public class SQLGeneratorProcedureCheck extends SQLGeneratorProcedure {
 
@@ -35,11 +31,15 @@ public class SQLGeneratorProcedureCheck extends SQLGeneratorProcedure {
      * Generate PostgreSQL procedure check SQL - via https://github.com/okbob/plpgsql_check
      */
     @Override
-    protected void generateSQL(DBRProgressMonitor monitor, StringBuilder sql, DBSProcedure proc) throws DBException {
+    protected void generateSQL(
+        @NotNull DBRProgressMonitor monitor,
+        @NotNull StringBuilder sql,
+        @NotNull DBSProcedure proc
+    ) throws DBException {
         sql.append("select * from plpgsql_check_function('" + proc.getFullyQualifiedName(DBPEvaluationContext.DML) + "(");
         boolean first = true;
         for (DBSProcedureParameter parameter : CommonUtils.safeCollection(proc.getParameters(monitor))) {
-            if (parameter.getParameterKind() == DBSProcedureParameterKind.IN) {
+            if (parameter.getParameterKind().isInput()) {
                 if (!first) {
                     sql.append(",");
                 }

@@ -1,6 +1,6 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2023 DBeaver Corp and others
+ * Copyright (C) 2010-2026 DBeaver Corp and others
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,6 +22,8 @@ import org.eclipse.swt.widgets.Control;
 import org.eclipse.swt.widgets.Table;
 import org.eclipse.swt.widgets.Tree;
 import org.eclipse.swt.widgets.TreeItem;
+import org.jkiss.code.NotNull;
+import org.jkiss.code.Nullable;
 import org.jkiss.dbeaver.model.navigator.DBNNode;
 import org.jkiss.dbeaver.model.runtime.DBRProgressMonitor;
 import org.jkiss.dbeaver.model.runtime.load.ILoadVisualizer;
@@ -35,38 +37,34 @@ public class TreeLoadVisualizer implements ILoadVisualizer<Object[]> {
 
     public static final Object[] EMPTY_ELEMENT_ARRAY = new Object[0];
 
-    private DBNNode parent;
-    private TreeNodeSpecial placeHolder;
-    private AbstractTreeViewer viewer;
+    private final DBNNode parent;
+    private final TreeNodeSpecial placeHolder;
+    private final AbstractTreeViewer viewer;
 
-    public TreeLoadVisualizer(AbstractTreeViewer viewer, TreeNodeSpecial placeHolder, DBNNode parent)
-    {
+    public TreeLoadVisualizer(AbstractTreeViewer viewer, TreeNodeSpecial placeHolder, DBNNode parent) {
         this.viewer = viewer;
         this.placeHolder = placeHolder;
         this.parent = parent;
     }
 
+    @NotNull
     @Override
-    public DBRProgressMonitor overwriteMonitor(DBRProgressMonitor monitor)
-    {
+    public DBRProgressMonitor overwriteMonitor(@NotNull DBRProgressMonitor monitor) {
         return monitor;
     }
 
     @Override
-    public boolean isCompleted()
-    {
+    public boolean isCompleted() {
         return placeHolder.isDisposed() || viewer.testFindItem(parent) == null;
     }
 
     @Override
-    public void visualizeLoading()
-    {
+    public void visualizeLoading() {
         viewer.refresh(placeHolder, true);
     }
 
     @Override
-    public void completeLoading(Object[] children)
-    {
+    public void completeLoading(@Nullable Object[] children) {
         final Control viewerControl = viewer.getControl();
         if (viewerControl.isDisposed()) {
             return;
@@ -101,8 +99,7 @@ public class TreeLoadVisualizer implements ILoadVisualizer<Object[]> {
                     }
                 }
             }
-        }
-        finally {
+        } finally {
             placeHolder.dispose(parent);
             if (!viewerControl.isDisposed()) {
                 viewerControl.setRedraw(true);
@@ -110,11 +107,10 @@ public class TreeLoadVisualizer implements ILoadVisualizer<Object[]> {
         }
     }
 
-    public static Object[] expandChildren(AbstractTreeViewer viewer, TreeLoadService service)
-    {
+    public static Object[] expandChildren(AbstractTreeViewer viewer, TreeLoadService service) {
         DBNNode parent = service.getParentNode();
         TreeNodeSpecial placeHolder = TreeNodeChildrenLoading.createLoadingPlaceHolder(parent);
-        if (placeHolder != null && TreeNodeChildrenLoading.canBeginLoading(parent)) {
+        if (TreeNodeChildrenLoading.canBeginLoading(parent)) {
             TreeLoadVisualizer visualizer = new TreeLoadVisualizer(viewer, placeHolder, parent);
             LoadingJob.createService(service, visualizer).schedule();
             return new Object[]{placeHolder};

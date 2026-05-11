@@ -1,6 +1,6 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2023 DBeaver Corp and others
+ * Copyright (C) 2010-2026 DBeaver Corp and others
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -52,7 +52,7 @@ public class JDBCNumberValueHandler extends JDBCAbstractValueHandler implements 
     }
 
     @Override
-    public void refreshValueHandlerConfiguration(DBSTypedObject type) {
+    public void refreshValueHandlerConfiguration(@NotNull DBSTypedObject type) {
         this.formatter = null;
         this.useScientificNotation = -1;
     }
@@ -96,9 +96,9 @@ public class JDBCNumberValueHandler extends JDBCAbstractValueHandler implements 
     @Nullable
     @Override
     protected Object fetchColumnValue(
-        DBCSession session,
-        JDBCResultSet resultSet,
-        DBSTypedObject type,
+        @NotNull DBCSession session,
+        @NotNull JDBCResultSet resultSet,
+        @NotNull DBSTypedObject type,
         int index)
         throws DBCException, SQLException
     {
@@ -190,7 +190,7 @@ public class JDBCNumberValueHandler extends JDBCAbstractValueHandler implements 
                                 value = resultSet.getDouble(index);
                             }
                         }
-                    } catch (SQLException e) {
+                    } catch (SQLException | NumberFormatException e) {
                         // Last chance - get it as string. Sometimes columns marked as numbers are actually not numbers
                         return resultSet.getString(index);
                     }
@@ -210,8 +210,9 @@ public class JDBCNumberValueHandler extends JDBCAbstractValueHandler implements 
     }
 
     @Override
-    protected void bindParameter(JDBCSession session, JDBCPreparedStatement statement, DBSTypedObject paramType,
-                                 int paramIndex, Object value) throws SQLException, DBCException {
+    protected void bindParameter(
+        @NotNull JDBCSession session, @NotNull JDBCPreparedStatement statement, @NotNull DBSTypedObject paramType,
+        int paramIndex, Object value) throws SQLException, DBCException {
         if (value instanceof String) {
             String strValue = (String) value;
             // Some number. Actually we shouldn't be here
@@ -219,7 +220,7 @@ public class JDBCNumberValueHandler extends JDBCAbstractValueHandler implements 
             if (number != null) {
                 value = number;
             } else if (!strValue.isEmpty()) {
-                // String was't empty but it can't be p[arsed as number
+                // String wasn't empty, but it can't be p[arsed as number
                 // Let's save as string then
                 statement.setString(paramIndex, strValue);
                 return;
@@ -325,7 +326,7 @@ public class JDBCNumberValueHandler extends JDBCAbstractValueHandler implements 
 
     @Nullable
     @Override
-    public Object getValueFromObject(@NotNull DBCSession session, @NotNull DBSTypedObject type, Object object, boolean copy, boolean validateValue) throws DBCException
+    public Object getValueFromObject(@NotNull DBCSession session, @NotNull DBSTypedObject type, @Nullable Object object, boolean copy, boolean validateValue) throws DBCException
     {
         if (object == null) {
             return null;
@@ -392,13 +393,15 @@ public class JDBCNumberValueHandler extends JDBCAbstractValueHandler implements 
         }
     }
 
+    @NotNull
     @Override
     public String getDefaultValueLabel() {
         return "Zero";
     }
 
+    @NotNull
     @Override
-    public Object generateDefaultValue(DBCSession session, DBSTypedObject type) {
+    public Object generateDefaultValue(@NotNull DBCSession session, @NotNull DBSTypedObject type) {
         switch (type.getTypeID()) {
             case Types.BIGINT:
                 return 0L;

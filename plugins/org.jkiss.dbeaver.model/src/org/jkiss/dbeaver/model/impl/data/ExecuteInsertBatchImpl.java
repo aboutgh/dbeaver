@@ -1,6 +1,6 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2023 DBeaver Corp and others
+ * Copyright (C) 2010-2026 DBeaver Corp and others
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -135,7 +135,7 @@ public class ExecuteInsertBatchImpl extends ExecuteBatchImpl {
         if (useUpsert) {
             query.append(SQLConstants.KEYWORD_UPSERT).append(" INTO");
         } else {
-            query.append(method.getOpeningClause(table, session.getProgressMonitor()));
+            query.append(method.getOpeningClause(session.getProgressMonitor(), table));
         }
         query.append(" ").append(tableName).append(" ("); //$NON-NLS-1$ //$NON-NLS-2$
 
@@ -182,7 +182,7 @@ public class ExecuteInsertBatchImpl extends ExecuteBatchImpl {
                 if (valueHandler instanceof DBDValueBinder) {
                     rowValuesPart.add(((DBDValueBinder) valueHandler).makeQueryBind(attribute, attributeValues[k]));
                 } else if (skipBindValues) {
-                    rowValuesPart.add(SQLUtils.convertValueToSQL(session.getDataSource(), attribute, valueHandler, attributeValues[k], DBDDisplayFormat.NATIVE));
+                    rowValuesPart.add(SQLUtils.convertValueToSQL(session.getDataSource(), attribute, valueHandler, attributeValues[k], DBDDisplayFormat.NATIVE, false));
                 } else if (allNulls && attributeHasDefaultValue(attribute)) {
                     rowValuesPart.add("DEFAULT");
                 } else {
@@ -194,7 +194,7 @@ public class ExecuteInsertBatchImpl extends ExecuteBatchImpl {
 
         query.append(valuesPart);
         
-        String trailingClause = method.getTrailingClause(table, session.getProgressMonitor(), attributes);
+        String trailingClause = method.getTrailingClause(session.getProgressMonitor(), table, attributes);
         if (trailingClause != null) {
             query.append(trailingClause);
         }

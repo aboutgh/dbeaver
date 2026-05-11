@@ -1,6 +1,6 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2023 DBeaver Corp and others
+ * Copyright (C) 2010-2026 DBeaver Corp and others
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,21 +18,34 @@
 package org.jkiss.dbeaver.ui.dialogs;
 
 import org.eclipse.jface.dialogs.IDialogConstants;
+import org.eclipse.jface.dialogs.IDialogSettings;
 import org.eclipse.jface.dialogs.MessageDialogWithToggle;
 import org.eclipse.jface.preference.IPreferenceStore;
+import org.eclipse.jface.resource.JFaceResources;
+import org.eclipse.osgi.util.NLS;
+import org.eclipse.swt.SWT;
 import org.eclipse.swt.graphics.Image;
+import org.eclipse.swt.layout.GridData;
 import org.eclipse.swt.widgets.Composite;
 import org.eclipse.swt.widgets.Control;
 import org.eclipse.swt.widgets.Shell;
+import org.eclipse.swt.widgets.Text;
 import org.jkiss.code.NotNull;
 import org.jkiss.code.Nullable;
+import org.jkiss.dbeaver.Log;
 import org.jkiss.dbeaver.model.preferences.DBPPreferenceStore;
+import org.jkiss.dbeaver.registry.confirmation.ConfirmationConstants;
+import org.jkiss.dbeaver.registry.confirmation.ConfirmationDescriptor;
+import org.jkiss.dbeaver.registry.confirmation.ConfirmationRegistry;
 import org.jkiss.dbeaver.runtime.DBWorkbench;
+import org.jkiss.dbeaver.ui.UIStyles;
 import org.jkiss.dbeaver.ui.UIUtils;
+import org.jkiss.dbeaver.ui.internal.UIActivator;
 import org.jkiss.dbeaver.ui.preferences.PreferenceStoreDelegate;
-import org.jkiss.dbeaver.ui.registry.ConfirmationRegistry;
+import org.jkiss.dbeaver.utils.RuntimeUtils;
 import org.jkiss.utils.CommonUtils;
 
+import java.util.Locale;
 import java.util.ResourceBundle;
 
 /**
@@ -40,14 +53,16 @@ import java.util.ResourceBundle;
  */
 public class ConfirmationDialog extends MessageDialogWithToggle {
 
-    public static final String PREF_KEY_PREFIX = "org.jkiss.dbeaver.core.confirm."; //$NON-NLS-1$
+    private static final Log log = Log.getLog(UIStyles.class);
+    private static final int CODE_BLOCK_HEIGHT_IN_LINES = 12;
 
-    public static final String RES_KEY_TITLE = "title"; //$NON-NLS-1$
-    public static final String RES_KEY_MESSAGE = "message"; //$NON-NLS-1$
-    public static final String RES_KEY_TOGGLE_MESSAGE = "toggleMessage"; //$NON-NLS-1$
-    public static final String RES_CONFIRM_PREFIX = "confirm_"; //$NON-NLS-1$
+    public static final int CONFIRM_WITH_YES_TO_ALL = 7;
 
-    private boolean hideToggle;
+    private final boolean hideToggle;
+    @Nullable
+    private final String codeBlockText;
+    @Nullable
+    private final String confirmationId;
 
     public ConfirmationDialog(
         Shell parentShell,
@@ -57,11 +72,41 @@ public class ConfirmationDialog extends MessageDialogWithToggle {
         int dialogImageType,
         String[] dialogButtonLabels,
         int defaultIndex,
-        String toggleMessage,
+        @Nullable String toggleMessage,
         boolean toggleState)
+    {
+        this(
+            parentShell,
+            dialogTitle,
+            image,
+            message,
+            dialogImageType,
+            dialogButtonLabels,
+            defaultIndex,
+            toggleMessage,
+            toggleState,
+            null,
+            null
+        );
+    }
+
+    public ConfirmationDialog(
+        Shell parentShell,
+        String dialogTitle,
+        Image image,
+        String message,
+        int dialogImageType,
+        String[] dialogButtonLabels,
+        int defaultIndex,
+        @Nullable String toggleMessage,
+        boolean toggleState,
+        @Nullable String codeBlockText,
+        @Nullable String confirmationId)
     {
         super(parentShell, dialogTitle, image, message, dialogImageType, dialogButtonLabels, defaultIndex, toggleMessage, toggleState);
         this.hideToggle = toggleMessage == null;
+        this.codeBlockText = codeBlockText;
+        this.confirmationId = confirmationId;
     }
 
     @Override
@@ -73,15 +118,95 @@ public class ConfirmationDialog extends MessageDialogWithToggle {
         return dialogArea;
     }
 
+    @Override
+    protected void initializeBounds() {
+        super.initializeBounds();
+    }
+
+    @Override
+    protected boolean isResizable() {
+        return CommonUtils.isNotEmpty(codeBlockText) || super.isResizable();
+    }
+
+    @Override
+    protected IDialogSettings getDialogBoundsSettings() {
+        return CommonUtils.isNotEmpty(confirmationId) ? UIUtils.getDialogSettings("ConfirmationDialog." + confirmationId) : super.getDialogBoundsSettings();
+    }
+
+    @Override
+    protected void createDialogAndButtonArea(Composite parent) {
+        if (CommonUtils.isEmpty(codeBlockText)) {
+            super.createDialogAndButtonArea(parent);
+            return;
+        }
+
+        dialogArea = createDialogArea(parent);
+        if (dialogArea.getLayoutData() instanceof GridData gridData) {
+            gridData.grabExcessVerticalSpace = false;
+        }
+
+        Text codeBlock = new Text(parent, SWT.BORDER | SWT.MULTI | SWT.READ_ONLY | SWT.V_SCROLL);
+        codeBlock.setFont(JFaceResources.getTextFont());
+        codeBlock.setText(codeBlockText);
+
+        GridData gridData = new GridData(GridData.FILL_BOTH);
+        gridData.heightHint = UIUtils.getFontHeight(codeBlock) * CODE_BLOCK_HEIGHT_IN_LINES + 10;
+        gridData.horizontalSpan = 2;
+        codeBlock.setLayoutData(gridData);
+
+        buttonBar = createButtonBar(parent);
+        applyDialogFont(parent);
+    }
+
+    /**
+     * Retrieves persisted confirmation state for the given key.
+     *
+     * @param id   identifier of a confirmation
+     * @param kind kind of the confirmation
+     * @return {@code true} if the persisted answer is "okay" or "yes",
+     * {@code false} if the persisted answer is "no",
+     * or {@code null} is no persisted answer is present
+     */
+    @Nullable
+    public static Boolean getPersistedState(@NotNull String id, int kind) {
+        String key = ConfirmationConstants.CONFIRM_PREF_KEY_PREFIX + id;
+        DBPPreferenceStore store = DBWorkbench.getPlatform().getPreferenceStore();
+
+        if (ConfirmationDialog.ALWAYS.equals(store.getString(key))) {
+            return true;
+        } else if (ConfirmationDialog.NEVER.equals(store.getString(key))) {
+            // These dialog all have OK and maybe CANCEL buttons.
+            // It makes no sense to return CANCEL_ID here as it's not a valid decision like YES or NO
+            return kind != QUESTION && kind != QUESTION_WITH_CANCEL;
+        } else {
+            return null;
+        }
+    }
+
     public static int open(
         int kind,
         int imageKind,
-        Shell parent,
-        String title,
-        String message,
-        String toggleMessage,
+        @Nullable Shell parent,
+        @NotNull String title,
+        @NotNull String message,
+        @Nullable String toggleMessage,
         boolean toggleState,
-        String key)
+        @NotNull String key)
+    {
+        return open(kind, imageKind, parent, title, message, toggleMessage, toggleState, key, null, null);
+    }
+
+    public static int open(
+        int kind,
+        int imageKind,
+        @Nullable Shell parent,
+        @NotNull String title,
+        @NotNull String message,
+        @Nullable String toggleMessage,
+        boolean toggleState,
+        @NotNull String key,
+        @Nullable String confirmationId,
+        @Nullable String codeBlockText)
     {
         DBPPreferenceStore prefStore = DBWorkbench.getPlatform().getPreferenceStore();
         if (toggleMessage != null) {
@@ -95,7 +220,9 @@ public class ConfirmationDialog extends MessageDialogWithToggle {
                 if (kind == QUESTION || kind == QUESTION_WITH_CANCEL) {
                     return IDialogConstants.NO_ID;
                 } else {
-                    return IDialogConstants.CANCEL_ID;
+                    // These dialog all have OK and maybe CANCEL buttons.
+                    // It makes no sense to return CANCEL_ID here as it's not a valid decision like YES or NO
+                    return IDialogConstants.OK_ID;
                 }
             }
         }
@@ -108,29 +235,33 @@ public class ConfirmationDialog extends MessageDialogWithToggle {
             getButtonLabels(kind),
             getDefaultIndex(kind, imageKind),
             toggleMessage,
-            toggleState);
+            toggleState,
+            codeBlockText,
+            confirmationId);
         dialog.setPrefStore(new PreferenceStoreDelegate(prefStore));
         dialog.setPrefKey(key);
         return dialog.open();
     }
 
     public static String[] getButtonLabels(int kind) {
-        switch (kind) {
-        case ERROR:
-        case INFORMATION:
-        case WARNING:
-            return new String[] { IDialogConstants.OK_LABEL };
-        case CONFIRM:
-            return new String[] { IDialogConstants.OK_LABEL, IDialogConstants.CANCEL_LABEL };
-        case QUESTION:
-            return new String[] { IDialogConstants.YES_LABEL, IDialogConstants.NO_LABEL };
-        case QUESTION_WITH_CANCEL: {
-            return new String[] { IDialogConstants.YES_LABEL, IDialogConstants.NO_LABEL, IDialogConstants.CANCEL_LABEL };
-        }
-        default:
-            throw new IllegalArgumentException(
-                    "Illegal value for kind in MessageDialog.open()"); //$NON-NLS-1$
-        }
+        //$NON-NLS-1$
+        return switch (kind) {
+            case ERROR, INFORMATION, WARNING -> new String[]{IDialogConstants.OK_LABEL};
+            case CONFIRM -> RuntimeUtils.isMacOS() ?
+                new String[]{IDialogConstants.CANCEL_LABEL, IDialogConstants.OK_LABEL} :
+                new String[]{IDialogConstants.OK_LABEL, IDialogConstants.CANCEL_LABEL};
+            case QUESTION -> RuntimeUtils.isMacOS() ?
+                new String[]{IDialogConstants.NO_LABEL, IDialogConstants.YES_LABEL} :
+                new String[]{IDialogConstants.YES_LABEL, IDialogConstants.NO_LABEL};
+            case QUESTION_WITH_CANCEL -> RuntimeUtils.isMacOS() ?
+                new String[]{IDialogConstants.CANCEL_LABEL, IDialogConstants.NO_LABEL, IDialogConstants.YES_LABEL } :
+                new String[]{IDialogConstants.YES_LABEL, IDialogConstants.NO_LABEL, IDialogConstants.CANCEL_LABEL};
+            case CONFIRM_WITH_YES_TO_ALL -> RuntimeUtils.isMacOS() ?
+                new String[] {IDialogConstants.CANCEL_LABEL, IDialogConstants.OK_LABEL, IDialogConstants.YES_TO_ALL_LABEL} :
+                new String[] {IDialogConstants.YES_TO_ALL_LABEL, IDialogConstants.OK_LABEL, IDialogConstants.CANCEL_LABEL};
+            default -> throw new IllegalArgumentException(
+                "Illegal value for kind in MessageDialog.open()"); //$NON-NLS-1$
+        };
     }
 
     public static int getDefaultIndex(int kind, int imageKind) {
@@ -141,14 +272,14 @@ public class ConfirmationDialog extends MessageDialogWithToggle {
                 return 0;
             case CONFIRM:
                 if (imageKind == WARNING) {
-                    return 1;
+                    return RuntimeUtils.isMacOS() ? 0 : 1;
                 } else {
-                    return 0;
+                    return RuntimeUtils.isMacOS() ? 1 : 0;
                 }
             case QUESTION:
-                return 1;
-            case QUESTION_WITH_CANCEL: {
-                return 2;
+                return RuntimeUtils.isMacOS() ? 0 : 1;
+            case QUESTION_WITH_CANCEL, CONFIRM_WITH_YES_TO_ALL: {
+                return RuntimeUtils.isMacOS() ? 0 : 2;
             }
             default:
                 throw new IllegalArgumentException(
@@ -157,61 +288,52 @@ public class ConfirmationDialog extends MessageDialogWithToggle {
     }
 
     public static int confirmAction(@Nullable Shell shell, @NotNull String id, int type, @NotNull Object... args) {
-        return ConfirmationRegistry.getInstance().confirmAction(shell, id, type, -1, args);
+        return confirmAction(shell, -1, id, type, args);
     }
 
     public static int confirmAction(@Nullable Shell shell, int imageType, @NotNull String id, int type, @NotNull Object... args) {
-        return ConfirmationRegistry.getInstance().confirmAction(shell, id, type, imageType, args);
+        return confirmAction(shell, imageType, id, type, null, args);
     }
 
-    public static boolean confirmAction(ResourceBundle bundle, Shell shell, String id)
+    public static int confirmAction(
+        @Nullable Shell shell,
+        int imageType,
+        @NotNull String id,
+        int type,
+        @Nullable String codeBlockText,
+        @NotNull Object... args)
     {
-        return confirmActionWithParams(bundle, shell, id);
-    }
+        ConfirmationDescriptor descriptor = ConfirmationRegistry.getInstance().getConfirmation(id);
+        String toggleMessage = descriptor.getToggleMessage();
+        if ("default".equals(descriptor.getToggleMessage())) {
+            ResourceBundle resourceBundle = RuntimeUtils.getBundleLocalization(
+                UIActivator.getDefault().getBundle(),
+                Locale.getDefault().getLanguage()
+            );
+            try {
+                toggleMessage = resourceBundle.getString("confirm.general.toggleMessage");
+            } catch (Exception e) {
+                log.debug(e);
+            }
+        }
 
-    public static boolean confirmActionWithParams(ResourceBundle bundle, Shell shell, String id, Object ... args)
-    {
-        return showConfirmDialog(bundle, shell, id, CONFIRM, args) == IDialogConstants.OK_ID;
-    }
-
-    public static int showConfirmDialog(ResourceBundle bundle, @Nullable Shell shell, String id, int type, Object ... args)
-    {
-        return showConfirmDialogEx(bundle, shell, id, type, type, args);
+        return ConfirmationDialog.open(
+            type,
+            imageType == -1 ? type : imageType,
+            shell,
+            NLS.bind(descriptor.getTitle(), args),
+            NLS.bind(descriptor.getMessage(), args),
+            toggleMessage != null ? NLS.bind(toggleMessage, args) : null,
+            false,
+            ConfirmationConstants.CONFIRM_PREF_KEY_PREFIX + id,
+            id,
+            codeBlockText
+        );
     }
 
     public static String getSavedPreference(String id) {
         DBPPreferenceStore prefStore = DBWorkbench.getPlatform().getPreferenceStore();
-        return prefStore.getString(PREF_KEY_PREFIX + id);
-    }
-
-    public static int showConfirmDialogEx(ResourceBundle bundle, Shell shell, String id, int type, int imageType, Object... args)
-    {
-        String titleKey = getResourceKey(id, RES_KEY_TITLE);
-        String messageKey = getResourceKey(id, RES_KEY_MESSAGE);
-        String toggleKey = getResourceKey(id, RES_KEY_TOGGLE_MESSAGE);
-        String prefKey = PREF_KEY_PREFIX + id;
-
-        String toggleMessage;
-        try {
-            toggleMessage = bundle.getString(toggleKey);
-        } catch (Exception e) {
-            toggleMessage = null;
-        }
-
-        return open(
-            type,
-            imageType,
-            shell,
-            UIUtils.formatMessage(bundle.getString(titleKey), args),
-            UIUtils.formatMessage(bundle.getString(messageKey), args),
-            toggleMessage == null ? null : UIUtils.formatMessage(toggleMessage, args),
-            false,
-            prefKey);
-    }
-
-    public static String getResourceKey(String id, String key)
-    {
-        return RES_CONFIRM_PREFIX + id + "_" + key;  //$NON-NLS-1$
+        return prefStore.getString(ConfirmationConstants.CONFIRM_PREF_KEY_PREFIX + id);
     }
 
     @Override

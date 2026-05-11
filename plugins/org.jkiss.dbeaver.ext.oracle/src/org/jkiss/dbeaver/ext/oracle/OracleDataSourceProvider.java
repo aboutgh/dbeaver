@@ -1,7 +1,6 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2023 DBeaver Corp and others
- * Copyright (C) 2011-2012 Eugene Fradkin (eugene.fradkin@gmail.com)
+ * Copyright (C) 2010-2026 DBeaver Corp and others
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,7 +24,10 @@ import org.jkiss.dbeaver.ext.oracle.model.OracleDataSource;
 import org.jkiss.dbeaver.ext.oracle.model.dict.OracleConnectionType;
 import org.jkiss.dbeaver.ext.oracle.oci.OCIUtils;
 import org.jkiss.dbeaver.ext.oracle.oci.OracleHomeDescriptor;
-import org.jkiss.dbeaver.model.*;
+import org.jkiss.dbeaver.model.DBPDataSourceContainer;
+import org.jkiss.dbeaver.model.DBPInformationProvider;
+import org.jkiss.dbeaver.model.DBPObject;
+import org.jkiss.dbeaver.model.DatabaseURL;
 import org.jkiss.dbeaver.model.access.DBAUserCredentialsProvider;
 import org.jkiss.dbeaver.model.connection.DBPConnectionConfiguration;
 import org.jkiss.dbeaver.model.connection.DBPDriver;
@@ -33,8 +35,8 @@ import org.jkiss.dbeaver.model.connection.DBPNativeClientLocation;
 import org.jkiss.dbeaver.model.connection.DBPNativeClientLocationManager;
 import org.jkiss.dbeaver.model.impl.auth.AuthModelDatabaseNative;
 import org.jkiss.dbeaver.model.impl.jdbc.JDBCDataSourceProvider;
+import org.jkiss.dbeaver.model.net.DBWUtils;
 import org.jkiss.dbeaver.model.runtime.DBRProgressMonitor;
-import org.jkiss.dbeaver.registry.DataSourceUtils;
 import org.jkiss.utils.CommonUtils;
 
 import java.io.File;
@@ -42,13 +44,17 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
-public class OracleDataSourceProvider extends JDBCDataSourceProvider implements
+public class OracleDataSourceProvider extends JDBCDataSourceProvider<OracleDataSource> implements
     DBAUserCredentialsProvider,
     DBPNativeClientLocationManager,
     DBPInformationProvider {
 
-    public OracleDataSourceProvider()
-    {
+    public OracleDataSourceProvider() {
+        super(OracleDataSource.class);
+    }
+
+    protected OracleDataSourceProvider(@NotNull Class<? extends OracleDataSource> dsClass) {
+        super(dsClass);
     }
 
     @Override
@@ -57,9 +63,9 @@ public class OracleDataSourceProvider extends JDBCDataSourceProvider implements
         return FEATURE_SCHEMAS;
     }
 
+    @NotNull
     @Override
-    public String getConnectionURL(DBPDriver driver, DBPConnectionConfiguration connectionInfo)
-    {
+    public String getConnectionURL(@NotNull DBPDriver driver, @NotNull DBPConnectionConfiguration connectionInfo) {
         //boolean isOCI = OCIUtils.isOciDriver(driver);
         OracleConstants.ConnectionType connectionType = getConnectionType(connectionInfo);
         if (connectionType == OracleConstants.ConnectionType.CUSTOM) {
@@ -136,7 +142,7 @@ public class OracleDataSourceProvider extends JDBCDataSourceProvider implements
 
     @NotNull
     @Override
-    public DBPDataSource openDataSource(
+    public OracleDataSource openDataSource(
         @NotNull DBRProgressMonitor monitor, @NotNull DBPDataSourceContainer container)
         throws DBException
     {
@@ -192,6 +198,7 @@ public class OracleDataSourceProvider extends JDBCDataSourceProvider implements
         return null;
     }
 
+    @Nullable
     @Override
     public String getConnectionUserName(@NotNull DBPConnectionConfiguration connectionInfo) {
         String userName = connectionInfo.getUserName();
@@ -207,6 +214,7 @@ public class OracleDataSourceProvider extends JDBCDataSourceProvider implements
         return role == null ? userName : userName + " AS " + role;
     }
 
+    @Nullable
     @Override
     public String getConnectionUserPassword(@NotNull DBPConnectionConfiguration connectionInfo) {
         return connectionInfo.getUserPassword();
@@ -216,8 +224,8 @@ public class OracleDataSourceProvider extends JDBCDataSourceProvider implements
     @Nullable
     @Override
     public String getObjectInformation(@NotNull DBPObject object, @NotNull String infoType) {
-        if (object instanceof DBPDataSourceContainer && infoType.equals(INFO_TARGET_ADDRESS)) {
-            DBPConnectionConfiguration connectionInfo = ((DBPDataSourceContainer) object).getConnectionConfiguration();
+        if (object instanceof DBPDataSourceContainer ds && infoType.equals(INFO_TARGET_ADDRESS)) {
+            DBPConnectionConfiguration connectionInfo = ds.getConnectionConfiguration();
             OracleConstants.ConnectionType connectionType = getConnectionType(connectionInfo);
             if (connectionType == OracleConstants.ConnectionType.CUSTOM) {
                 return DatabaseURL.generateUrlByTemplate(connectionInfo.getUrl(), connectionInfo);
@@ -226,7 +234,7 @@ public class OracleDataSourceProvider extends JDBCDataSourceProvider implements
             if (connectionType == OracleConstants.ConnectionType.TNS) {
                 return databaseName;
             } else {
-                String hostName = DataSourceUtils.getTargetTunnelHostName(connectionInfo);
+                String hostName = DBWUtils.getTargetTunnelHostName(ds, connectionInfo);
                 String hostPort = connectionInfo.getHostPort();
                 if (CommonUtils.isEmpty(hostName)) {
                     return null;

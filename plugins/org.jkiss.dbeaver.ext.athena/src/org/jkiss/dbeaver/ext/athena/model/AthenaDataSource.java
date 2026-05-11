@@ -1,6 +1,6 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2023 DBeaver Corp and others
+ * Copyright (C) 2010-2026 DBeaver Corp and others
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
  */
 package org.jkiss.dbeaver.ext.athena.model;
 
+import org.jkiss.code.NotNull;
 import org.jkiss.dbeaver.DBException;
 import org.jkiss.dbeaver.ext.generic.model.GenericDataSource;
 import org.jkiss.dbeaver.model.DBPDataSourceContainer;
@@ -41,20 +42,55 @@ public class AthenaDataSource extends GenericDataSource {
     }
 
     @Override
-    protected Map<String, String> getInternalConnectionProperties(DBRProgressMonitor monitor, DBPDriver driver, JDBCExecutionContext context, String purpose, DBPConnectionConfiguration connectionInfo) throws DBCException {
+    protected Map<String, String> getInternalConnectionProperties(
+        @NotNull DBRProgressMonitor monitor,
+        @NotNull DBPDriver driver,
+        @NotNull JDBCExecutionContext context,
+        @NotNull String purpose,
+        @NotNull DBPConnectionConfiguration connectionInfo
+    ) throws DBCException {
         Map<String, String> props = new HashMap<>();
         if (CommonUtils.isEmpty(connectionInfo.getDatabaseName())) {
-            connectionInfo.setDatabaseName(connectionInfo.getProviderProperty(AthenaConstants.DRIVER_PROP_S3_OUTPUT_LOCATION));
+            String s3OutputLocation = connectionInfo.getProviderProperty(AthenaConstants.DRIVER_PROP_S3_OUTPUT_LOCATION);
+            if (s3OutputLocation == null) {
+                s3OutputLocation = connectionInfo.getProviderProperty(AthenaConstants.DRIVER_PROP_S3_OUTPUT_LOCATION_OLD);
+            }
+            connectionInfo.setDatabaseName(s3OutputLocation);
         }
-        props.put(AthenaConstants.DRIVER_PROP_S3_OUTPUT_LOCATION, connectionInfo.getDatabaseName());
-        props.put(AthenaConstants.DRIVER_PROP_AWS_CREDENTIALS_PROVIDER_CLASS, "com.amazonaws.auth.DefaultAWSCredentialsProviderChain");
+        if (!CommonUtils.isEmpty(connectionInfo.getDatabaseName())) {
+            String s3OutPropName = isLegacyDriver() ?
+                AthenaConstants.DRIVER_PROP_S3_OUTPUT_LOCATION_OLD : AthenaConstants.DRIVER_PROP_S3_OUTPUT_LOCATION;
+            props.put(s3OutPropName, connectionInfo.getDatabaseName());
+        }
 
+        boolean useCatalogs = CommonUtils.toBoolean(connectionInfo.getProviderProperty(AthenaConstants.PROP_SHOW_CATALOGS));
+        if (useCatalogs) {
+            props.put(AthenaConstants.DRIVER_PROP_METADATA_RETRIEVAL_METHOD, "ProxyAPI");
+        }
+
+        if (!isLegacyDriver()) {
+            // Hack to fix update from v2 -> v3 driver version https://github.com/dbeaver/dbeaver/issues/39947
+            // https://docs.aws.amazon.com/athena/latest/ug/jdbc-v3-driver-aws-configuration-profile-credentials.html
+            String credentialsProviderClass = connectionInfo.getProperties()
+                .get(AthenaConstants.PROP_AWS_CREDENTIALS_PROVIDER_CLASS);
+            if (AthenaConstants.PROP_OLD_VALUE_AWS_CREDENTIALS_PROVIDER_CLASS.equals(credentialsProviderClass)) {
+                connectionInfo.getProperties().put(
+                    AthenaConstants.PROP_AWS_CREDENTIALS_PROVIDER_CLASS,
+                    AthenaConstants.PROP_NEW_VALUE_AWS_CREDENTIALS_PROVIDER_CLASS
+                );
+            }
+        }
         return props;
+    }
+
+    private boolean isLegacyDriver() {
+        return AthenaUtils.isLegacyDriver(getContainer().getDriver());
     }
 
     @Override
     public boolean isOmitCatalog() {
-        return true;
+        return !CommonUtils.toBoolean(
+            getContainer().getConnectionConfiguration().getProviderProperty(AthenaConstants.PROP_SHOW_CATALOGS));
     }
 
     @Override

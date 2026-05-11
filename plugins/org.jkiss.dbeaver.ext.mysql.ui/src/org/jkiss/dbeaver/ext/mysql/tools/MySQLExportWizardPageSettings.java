@@ -1,6 +1,6 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2023 DBeaver Corp and others
+ * Copyright (C) 2010-2026 DBeaver Corp and others
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,7 +21,9 @@ import org.eclipse.swt.events.SelectionAdapter;
 import org.eclipse.swt.events.SelectionEvent;
 import org.eclipse.swt.events.SelectionListener;
 import org.eclipse.swt.layout.GridData;
-import org.eclipse.swt.widgets.*;
+import org.eclipse.swt.widgets.Button;
+import org.eclipse.swt.widgets.Combo;
+import org.eclipse.swt.widgets.Composite;
 import org.jkiss.dbeaver.ext.mysql.tasks.MySQLExportSettings;
 import org.jkiss.dbeaver.ext.mysql.ui.internal.MySQLUIMessages;
 import org.jkiss.dbeaver.ui.UIUtils;
@@ -32,6 +34,7 @@ class MySQLExportWizardPageSettings extends MySQLWizardPageSettings<MySQLExportW
 
     private Combo methodCombo;
     private Button noCreateStatementsCheck;
+    private Button compressedCheck;
     private Button addDropStatementsCheck;
     private Button disableKeysCheck;
     private Button extendedInsertsCheck;
@@ -40,6 +43,7 @@ class MySQLExportWizardPageSettings extends MySQLWizardPageSettings<MySQLExportW
     private Button removeDefiner;
     private Button binaryInHex;
     private Button noData;
+    private Button noRoutines;
 
     MySQLExportWizardPageSettings(MySQLExportWizard wizard)
     {
@@ -60,7 +64,7 @@ class MySQLExportWizardPageSettings extends MySQLWizardPageSettings<MySQLExportW
             }
         };
 
-        Group methodGroup = UIUtils.createControlGroup(composite, MySQLUIMessages.tools_db_export_wizard_page_settings_group_exe_method, 1, GridData.FILL_HORIZONTAL, 0);
+        Composite methodGroup = UIUtils.createTitledComposite(composite, MySQLUIMessages.tools_db_export_wizard_page_settings_group_exe_method, 1, GridData.FILL_HORIZONTAL);
         methodCombo = new Combo(methodGroup, SWT.DROP_DOWN | SWT.READ_ONLY);
         methodCombo.setLayoutData(new GridData(GridData.FILL_HORIZONTAL));
         methodCombo.add(MySQLUIMessages.tools_db_export_wizard_page_settings_combo_item_online_backup);
@@ -69,9 +73,11 @@ class MySQLExportWizardPageSettings extends MySQLWizardPageSettings<MySQLExportW
         methodCombo.select(wizard.getSettings().getMethod().ordinal());
         methodCombo.addSelectionListener(changeListener);
 
-        Group settingsGroup = UIUtils.createControlGroup(composite, MySQLUIMessages.tools_db_export_wizard_page_settings_group_settings, 3, GridData.FILL_HORIZONTAL, 0);
+        Composite settingsGroup = UIUtils.createTitledComposite(composite, MySQLUIMessages.tools_db_export_wizard_page_settings_group_settings, 3, GridData.FILL_HORIZONTAL);
         noCreateStatementsCheck = UIUtils.createCheckbox(settingsGroup, MySQLUIMessages.tools_db_export_wizard_page_settings_checkbox_no_create, wizard.getSettings().isNoCreateStatements());
         noCreateStatementsCheck.addSelectionListener(changeListener);
+        compressedCheck = UIUtils.createCheckbox(settingsGroup, MySQLUIMessages.tools_db_export_wizard_page_settings_checkbox_compressed, wizard.getSettings().isCompressed());
+        compressedCheck.addSelectionListener(changeListener);
         addDropStatementsCheck = UIUtils.createCheckbox(settingsGroup, MySQLUIMessages.tools_db_export_wizard_page_settings_checkbox_add_drop, wizard.getSettings().isAddDropStatements());
         addDropStatementsCheck.addSelectionListener(changeListener);
         disableKeysCheck = UIUtils.createCheckbox(settingsGroup, MySQLUIMessages.tools_db_export_wizard_page_settings_checkbox_disable_keys, wizard.getSettings().isDisableKeys());
@@ -89,7 +95,10 @@ class MySQLExportWizardPageSettings extends MySQLWizardPageSettings<MySQLExportW
         noData = UIUtils.createCheckbox(settingsGroup, MySQLUIMessages.tools_db_export_wizard_page_settings_checkbox_no_data, wizard.getSettings().isNoData());
         noData.addSelectionListener(changeListener);
 
-        Group outputGroup = UIUtils.createControlGroup(composite, MySQLUIMessages.tools_db_export_wizard_page_settings_group_output, 2, GridData.FILL_HORIZONTAL, 0);
+        noRoutines = UIUtils.createCheckbox(settingsGroup, MySQLUIMessages.tools_db_export_wizard_page_settings_checkbox_no_routines, wizard.getSettings().isNoRoutines());
+        noRoutines.addSelectionListener(changeListener);
+
+        Composite outputGroup = UIUtils.createTitledComposite(composite, MySQLUIMessages.tools_db_export_wizard_page_settings_group_output, 2, GridData.FILL_HORIZONTAL);
         createOutputFolderInput(outputGroup, wizard.getSettings());
         createExtraArgsInput(outputGroup);
         outputFileText.addModifyListener(e -> {
@@ -113,17 +122,12 @@ class MySQLExportWizardPageSettings extends MySQLWizardPageSettings<MySQLExportW
         settings.setOutputFilePattern(outputFileText.getText());
 
         switch (methodCombo.getSelectionIndex()) {
-            case 0:
-                settings.setMethod(MySQLExportSettings.DumpMethod.ONLINE);
-                break;
-            case 1:
-                settings.setMethod(MySQLExportSettings.DumpMethod.LOCK_ALL_TABLES);
-                break;
-            default:
-                settings.setMethod(MySQLExportSettings.DumpMethod.NORMAL);
-                break;
+            case 0 -> settings.setMethod(MySQLExportSettings.DumpMethod.ONLINE);
+            case 1 -> settings.setMethod(MySQLExportSettings.DumpMethod.LOCK_ALL_TABLES);
+            default -> settings.setMethod(MySQLExportSettings.DumpMethod.NORMAL);
         }
         settings.setNoCreateStatements(noCreateStatementsCheck.getSelection());
+        settings.setCompressed(compressedCheck.getSelection());
         settings.setAddDropStatements(addDropStatementsCheck.getSelection());
         settings.setDisableKeys(disableKeysCheck.getSelection());
         settings.setExtendedInserts(extendedInsertsCheck.getSelection());
@@ -132,6 +136,7 @@ class MySQLExportWizardPageSettings extends MySQLWizardPageSettings<MySQLExportW
         settings.setRemoveDefiner(removeDefiner.getSelection());
         settings.setBinariesInHex(binaryInHex.getSelection());
         settings.setNoData(noData.getSelection());
+        settings.setNoRoutines(noRoutines.getSelection());
     }
 
     @Override

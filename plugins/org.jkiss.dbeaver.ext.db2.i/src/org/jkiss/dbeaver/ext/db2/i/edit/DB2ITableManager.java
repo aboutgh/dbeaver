@@ -1,6 +1,6 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2023 DBeaver Corp and others
+ * Copyright (C) 2010-2026 DBeaver Corp and others
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@
 package org.jkiss.dbeaver.ext.db2.i.edit;
 
 import org.jkiss.code.NotNull;
+import org.jkiss.code.Nullable;
 import org.jkiss.dbeaver.DBException;
 import org.jkiss.dbeaver.ext.db2.i.model.DB2IConstraint;
 import org.jkiss.dbeaver.ext.generic.edit.GenericTableManager;
@@ -50,8 +51,13 @@ public class DB2ITableManager extends GenericTableManager implements DBEObjectRe
         return CHILD_TYPES;
     }
 
+    @Nullable
     @Override
-    public Collection<? extends DBSObject> getChildObjects(DBRProgressMonitor monitor, GenericTableBase object, Class<? extends DBSObject> childType) throws DBException {
+    public Collection<? extends DBSObject> getChildObjects(
+        @NotNull DBRProgressMonitor monitor,
+        @NotNull GenericTableBase object,
+        @NotNull Class<? extends DBSObject> childType
+    ) throws DBException {
         if (childType == DB2IConstraint.class) {
             return object.getConstraints(monitor);
         }
@@ -64,7 +70,7 @@ public class DB2ITableManager extends GenericTableManager implements DBEObjectRe
     }
 
     @Override
-    protected void addObjectRenameActions(DBRProgressMonitor monitor, DBCExecutionContext executionContext, List<DBEPersistAction> actions, ObjectRenameCommand command, Map<String, Object> options) {
+    protected void addObjectRenameActions(@NotNull DBRProgressMonitor monitor, @NotNull DBCExecutionContext executionContext, @NotNull List<DBEPersistAction> actions, @NotNull ObjectRenameCommand command, @NotNull Map<String, Object> options) {
         GenericTableBase tableBase = command.getObject();
         GenericDataSource dataSource = tableBase.getDataSource();
         GenericStructContainer container = tableBase.getParentObject();

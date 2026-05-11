@@ -1,6 +1,6 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2023 DBeaver Corp and others
+ * Copyright (C) 2010-2026 DBeaver Corp and others
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@
 package org.jkiss.dbeaver.ext.exasol.manager;
 
 import org.jkiss.code.NotNull;
+import org.jkiss.code.Nullable;
 import org.jkiss.dbeaver.DBException;
 import org.jkiss.dbeaver.ext.exasol.ExasolConstants;
 import org.jkiss.dbeaver.ext.exasol.ExasolMessages;
@@ -43,7 +44,7 @@ import java.util.Map;
 public class ExasolRoleManager extends SQLObjectEditor<ExasolRole, ExasolDataSource> implements DBEObjectRenamer<ExasolRole> {
 
     @Override
-    public long getMakerOptions(DBPDataSource dataSource) {
+    public long getMakerOptions(@NotNull DBPDataSource dataSource) {
         return FEATURE_SAVE_IMMEDIATELY;
     }
 
@@ -56,15 +57,19 @@ public class ExasolRoleManager extends SQLObjectEditor<ExasolRole, ExasolDataSou
     }
 
     @Override
-    protected ExasolRole createDatabaseObject(DBRProgressMonitor monitor,
-          DBECommandContext context, Object container, Object copyFrom, Map<String, Object> options)
-    {
+    protected ExasolRole createDatabaseObject(
+        @NotNull DBRProgressMonitor monitor,
+        @NotNull DBECommandContext context,
+        @NotNull Object container,
+        @Nullable Object copyFrom,
+        @NotNull Map<String, Object> options
+    ) {
         return new ExasolRole((ExasolDataSource) container, "ROLE", "");
     }
 
     @Override
-    protected void addObjectCreateActions(DBRProgressMonitor monitor, DBCExecutionContext executionContext, List<DBEPersistAction> actions,
-                                          ObjectCreateCommand command, Map<String, Object> options) {
+    protected void addObjectCreateActions(@NotNull DBRProgressMonitor monitor, @NotNull DBCExecutionContext executionContext, @NotNull List<DBEPersistAction> actions,
+                                          @NotNull ObjectCreateCommand command, @NotNull Map<String, Object> options) {
         ExasolRole obj = command.getObject();
 
         String script = "CREATE ROLE " + DBUtils.getQuotedIdentifier(obj);
@@ -78,8 +83,8 @@ public class ExasolRoleManager extends SQLObjectEditor<ExasolRole, ExasolDataSou
     }
 
     @Override
-    protected void addObjectDeleteActions(DBRProgressMonitor monitor, DBCExecutionContext executionContext, List<DBEPersistAction> actions,
-                                          ObjectDeleteCommand command, Map<String, Object> options) {
+    protected void addObjectDeleteActions(@NotNull DBRProgressMonitor monitor, @NotNull DBCExecutionContext executionContext, @NotNull List<DBEPersistAction> actions,
+                                          @NotNull ObjectDeleteCommand command, @NotNull Map<String, Object> options) {
         ExasolRole obj = command.getObject();
         actions.add(new SQLDatabasePersistAction("Drop Role", "DROP ROLE " + DBUtils.getQuotedIdentifier(obj)));
     }
@@ -98,8 +103,8 @@ public class ExasolRoleManager extends SQLObjectEditor<ExasolRole, ExasolDataSou
     }
 
     @Override
-    protected void addObjectRenameActions(DBRProgressMonitor monitor, DBCExecutionContext executionContext, List<DBEPersistAction> actions,
-                                          ObjectRenameCommand command, Map<String, Object> options) {
+    protected void addObjectRenameActions(@NotNull DBRProgressMonitor monitor, @NotNull DBCExecutionContext executionContext, @NotNull List<DBEPersistAction> actions,
+                                          @NotNull ObjectRenameCommand command, @NotNull Map<String, Object> options) {
         ExasolRole obj = command.getObject();
         actions.add(
             new SQLDatabasePersistAction(
@@ -114,8 +119,8 @@ public class ExasolRoleManager extends SQLObjectEditor<ExasolRole, ExasolDataSou
     }
 
     @Override
-    protected void addObjectModifyActions(DBRProgressMonitor monitor, DBCExecutionContext executionContext, List<DBEPersistAction> actionList,
-                                          ObjectChangeCommand command, Map<String, Object> options) {
+    protected void addObjectModifyActions(@NotNull DBRProgressMonitor monitor, @NotNull DBCExecutionContext executionContext, @NotNull List<DBEPersistAction> actionList,
+                                          @NotNull ObjectChangeCommand command, @NotNull Map<String, Object> options) {
         ExasolRole obj = command.getObject();
         ExasolPriority priority = obj.getPriority();
 

@@ -1,6 +1,6 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2023 DBeaver Corp and others
+ * Copyright (C) 2010-2026 DBeaver Corp and others
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@
 package org.jkiss.dbeaver.model.impl.jdbc.data.handlers;
 
 import org.jkiss.code.NotNull;
+import org.jkiss.code.Nullable;
 import org.jkiss.dbeaver.DBException;
 import org.jkiss.dbeaver.Log;
 import org.jkiss.dbeaver.model.DBUtils;
@@ -59,15 +60,20 @@ public class JDBCReferenceValueHandler extends JDBCComplexValueHandler {
 
     @Override
     protected void bindParameter(
-        JDBCSession session,
-        JDBCPreparedStatement statement,
-        DBSTypedObject paramType,
+        @NotNull JDBCSession session,
+        @NotNull JDBCPreparedStatement statement,
+        @NotNull DBSTypedObject paramType,
         int paramIndex,
         Object value)
         throws DBCException, SQLException
     {
         JDBCReference reference = (JDBCReference) value;
-        statement.setRef(paramIndex, reference.getValue());
+        Object ref = reference.getValue();
+        if (ref instanceof Ref) {
+            statement.setRef(paramIndex, (Ref) ref);
+        } else {
+            statement.setObject(paramIndex, ref);
+        }
     }
 
     @NotNull
@@ -78,7 +84,7 @@ public class JDBCReferenceValueHandler extends JDBCComplexValueHandler {
     }
 
     @Override
-    public JDBCReference getValueFromObject(@NotNull DBCSession session, @NotNull DBSTypedObject type, Object object, boolean copy, boolean validateValue) throws DBCException
+    public JDBCReference getValueFromObject(@NotNull DBCSession session, @NotNull DBSTypedObject type, @Nullable Object object, boolean copy, boolean validateValue) throws DBCException
     {
         String typeName;
         try {
@@ -108,10 +114,8 @@ public class JDBCReferenceValueHandler extends JDBCComplexValueHandler {
             return new JDBCReference(dataType, null);
         } else if (object instanceof JDBCReference) {
             return (JDBCReference)object;
-        } else if (object instanceof Ref) {
-            return new JDBCReference(dataType, (Ref) object);
         } else {
-            throw new DBCException("Unsupported struct type: " + object.getClass().getName());
+            return new JDBCReference(dataType, object);
         }
     }
 

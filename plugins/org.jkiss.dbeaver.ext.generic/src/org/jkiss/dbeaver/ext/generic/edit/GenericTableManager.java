@@ -1,6 +1,6 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2023 DBeaver Corp and others
+ * Copyright (C) 2010-2026 DBeaver Corp and others
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -73,12 +73,14 @@ public class GenericTableManager extends SQLTableManager<GenericTableBase, Gener
     }
 
     @Override
-    public boolean canCreateObject(Object container) {
+    public boolean canCreateObject(@NotNull Object container) {
         return super.canCreateObject(container);
     }
 
     @Override
-    protected GenericTableBase createDatabaseObject(DBRProgressMonitor monitor, DBECommandContext context, Object container, Object copyFrom, Map<String, Object> options)
+    protected GenericTableBase createDatabaseObject(@NotNull DBRProgressMonitor monitor, @NotNull DBECommandContext context, @NotNull
+    Object container, @Nullable
+    Object copyFrom, @NotNull Map<String, Object> options)
     {
         GenericStructContainer structContainer = (GenericStructContainer) container;
 
@@ -91,13 +93,13 @@ public class GenericTableManager extends SQLTableManager<GenericTableBase, Gener
             }
         }
         String tableName = getNewChildName(monitor, structContainer, isView ? BASE_VIEW_NAME : BASE_TABLE_NAME);
-        return structContainer.getDataSource().getMetaModel().createTableImpl(structContainer, tableName,
+        return structContainer.getDataSource().getMetaModel().createTableOrViewImpl(structContainer, tableName,
             isView ? GenericConstants.TABLE_TYPE_VIEW : GenericConstants.TABLE_TYPE_TABLE,
             null);
     }
 
     @Override
-    protected boolean excludeFromDDL(NestedObjectCommand command, Collection<NestedObjectCommand> orderedCommands) {
+    protected boolean excludeFromDDL(@NotNull NestedObjectCommand command, @NotNull Collection<NestedObjectCommand> orderedCommands) {
         // Filter out indexes for unique constraints (if they have the same name)
         DBPObject object = command.getObject();
         if (object instanceof DBSTableIndex) {
@@ -116,7 +118,7 @@ public class GenericTableManager extends SQLTableManager<GenericTableBase, Gener
     }
 
     @Override
-    protected void addObjectExtraActions(DBRProgressMonitor monitor, DBCExecutionContext executionContext, List<DBEPersistAction> actions, NestedObjectCommand<GenericTableBase, PropertyHandler> command, Map<String, Object> options) throws DBException {
+    protected void addObjectExtraActions(@NotNull DBRProgressMonitor monitor, @NotNull DBCExecutionContext executionContext, @NotNull List<DBEPersistAction> actions, @NotNull NestedObjectCommand<GenericTableBase, PropertyHandler> command, @NotNull Map<String, Object> options) throws DBException {
         GenericTableBase tableBase = command.getObject();
         if (command.hasProperty(DBConstants.PROP_ID_DESCRIPTION)) {
             actions.add(new SQLDatabasePersistAction(

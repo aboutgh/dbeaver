@@ -1,7 +1,6 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2013-2016 Denis Forveille (titou10.titou10@gmail.com)
- * Copyright (C) 2010-2023 DBeaver Corp and others
+ * Copyright (C) 2010-2026 DBeaver Corp and others
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,9 +16,9 @@
  */
 package org.jkiss.dbeaver.ext.db2.model;
 
-import org.eclipse.core.runtime.IAdaptable;
 import org.jkiss.code.NotNull;
 import org.jkiss.code.Nullable;
+import org.jkiss.dbeaver.DBDatabaseException;
 import org.jkiss.dbeaver.DBException;
 import org.jkiss.dbeaver.Log;
 import org.jkiss.dbeaver.ModelPreferences;
@@ -31,12 +30,13 @@ import org.jkiss.dbeaver.ext.db2.model.app.DB2ServerApplicationManager;
 import org.jkiss.dbeaver.ext.db2.model.fed.DB2RemoteServer;
 import org.jkiss.dbeaver.ext.db2.model.fed.DB2UserMapping;
 import org.jkiss.dbeaver.ext.db2.model.fed.DB2Wrapper;
-import org.jkiss.dbeaver.ext.db2.model.plan.DB2PlanAnalyser;
+import org.jkiss.dbeaver.ext.db2.model.plan.DB2ExecutionPlan;
 import org.jkiss.dbeaver.ext.db2.model.security.DB2AuthIDType;
 import org.jkiss.dbeaver.ext.db2.model.security.DB2Grantee;
 import org.jkiss.dbeaver.ext.db2.model.security.DB2GranteeCache;
 import org.jkiss.dbeaver.ext.db2.model.security.DB2Role;
 import org.jkiss.dbeaver.model.*;
+import org.jkiss.dbeaver.model.access.DBAuthUtils;
 import org.jkiss.dbeaver.model.admin.sessions.DBAServerSessionManager;
 import org.jkiss.dbeaver.model.connection.DBPConnectionConfiguration;
 import org.jkiss.dbeaver.model.connection.DBPDriver;
@@ -60,9 +60,11 @@ import org.jkiss.dbeaver.model.struct.DBSObject;
 import org.jkiss.dbeaver.model.struct.DBSStructureAssistant;
 import org.jkiss.dbeaver.model.struct.cache.DBSObjectCache;
 import org.jkiss.dbeaver.utils.GeneralUtils;
+import org.jkiss.utils.BeanUtils;
 import org.jkiss.utils.CommonUtils;
 
 import java.sql.Connection;
+import java.sql.Driver;
 import java.sql.SQLException;
 import java.util.*;
 
@@ -71,7 +73,7 @@ import java.util.*;
  * 
  * @author Denis Forveille
  */
-public class DB2DataSource extends JDBCDataSource implements DBCQueryPlanner, IAdaptable, DBPObjectStatisticsCollector {
+public class DB2DataSource extends JDBCDataSource implements DBCQueryPlanner, DBPAdaptable, DBPObjectStatisticsCollector {
 
     private static final Log log = Log.getLog(DB2DataSource.class);
 
@@ -178,7 +180,7 @@ public class DB2DataSource extends JDBCDataSource implements DBCQueryPlanner, IA
         } catch (SQLException e) {
             log.warn("Unable to determine server variant", e);
         }
-        
+
         ((JDBCObjectSimpleCache) dataTypeCache).setCaseSensitive(false);
         try {
             this.dataTypeCache.getAllObjects(monitor, this);
@@ -189,7 +191,7 @@ public class DB2DataSource extends JDBCDataSource implements DBCQueryPlanner, IA
     }
 
     @Override
-    protected JDBCExecutionContext createExecutionContext(JDBCRemoteInstance instance, String type) {
+    protected JDBCExecutionContext createExecutionContext(JDBCRemoteInstance instance, String type) throws DBCException {
         return new DB2ExecutionContext(instance, type);
     }
 
@@ -205,7 +207,7 @@ public class DB2DataSource extends JDBCDataSource implements DBCQueryPlanner, IA
 
     @Override
     @SuppressWarnings({ "rawtypes", "unchecked" })
-    public <T> T getAdapter(Class<T> adapter)
+    public <T> T getAdapter(@NotNull Class<T> adapter)
     {
         if (adapter == DBSStructureAssistant.class) {
             return adapter.cast(new DB2StructureAssistant(this));
@@ -267,12 +269,12 @@ public class DB2DataSource extends JDBCDataSource implements DBCQueryPlanner, IA
     protected Map<String, String> getInternalConnectionProperties(
         @NotNull DBRProgressMonitor monitor,
         @NotNull DBPDriver driver,
-        @Nullable JDBCExecutionContext context,
+        @NotNull JDBCExecutionContext context,
         @NotNull String purpose,
         @NotNull DBPConnectionConfiguration connectionInfo
     ) throws DBCException {
-        Map<String, String> props = new HashMap<>();
-        props.putAll(DB2DataSourceProvider.getConnectionsProps());
+        Map<String, String> props = new LinkedHashMap<>(
+            DB2DataSourceProvider.getConnectionsProps());
         if (getContainer().isConnectionReadOnly()) {
             props.put(DB2Constants.PROP_READ_ONLY, "true");
         }
@@ -283,20 +285,100 @@ public class DB2DataSource extends JDBCDataSource implements DBCQueryPlanner, IA
     }
 
     @Override
-    protected Connection openConnection(@NotNull DBRProgressMonitor monitor, @Nullable JDBCExecutionContext context, @NotNull String purpose) throws DBCException {
-        Connection db2Connection = super.openConnection(monitor, context, purpose);
+    protected Connection openConnection(
+        @NotNull DBRProgressMonitor monitor,
+        @Nullable JDBCExecutionContext context,
+        @NotNull String purpose
+    ) throws DBCException {
+        Connection db2Connection;
+        try {
+            db2Connection = super.openConnection(monitor, context, purpose);
+        } catch (DBCException e) {
+            if ((!isBigSQL() && !isWarehouse()) && isPasswordExpired(e)
+                && DBAuthUtils.promptAndChangePasswordForCurrentUser(
+                monitor, container, this::changeUserPassword)) {
+                return openConnection(monitor, context, purpose);
+            }
+            throw e;
+        }
 
         if (!getContainer().getPreferenceStore().getBoolean(ModelPreferences.META_CLIENT_NAME_DISABLE)) {
-            // Provide client info
             try {
-                db2Connection.setClientInfo(JDBCConstants.APPLICATION_NAME_CLIENT_PROPERTY,
-                    CommonUtils.truncateString(DBUtils.getClientApplicationName(getContainer(), context, purpose), 255));
+                db2Connection.setClientInfo(
+                    JDBCConstants.APPLICATION_NAME_CLIENT_PROPERTY,
+                    CommonUtils.truncateString(
+                        DBUtils.getClientApplicationName(getContainer(), context, purpose),
+                        255));
             } catch (Throwable e) {
                 log.debug(e);
             }
         }
 
         return db2Connection;
+    }
+
+    private boolean isPasswordExpired(@NotNull DBCException e) {
+        Throwable cause = e.getCause();
+
+        if (!(cause instanceof SQLException sqlEx)) {
+            return false;
+        }
+
+        if (sqlEx.getErrorCode() != DB2Constants.ER_MUST_CHANGE_PASSWORD_LOGIN ||
+            !DB2Constants.ER_STATE_MUST_CHANGE_PASSWORD_LOGIN.equals(sqlEx.getSQLState())) {
+            return false;
+        }
+
+        try {
+            Object errorSrc = BeanUtils.invokeObjectDeclaredMethod(
+                cause,
+                "getErrorSrc",
+                new Class<?>[0],
+                new Object[0]
+            );
+            return DB2Constants.ER_PASSWORD_EXPIRED.equals(errorSrc);
+        } catch (Throwable ex) {
+            log.error("Failed to retrieve DB2 error source from SQLException", ex);
+            return false;
+        }
+    }
+
+    private void changeUserPassword(
+        @NotNull DBRProgressMonitor monitor,
+        @NotNull String userName,
+        @NotNull String newPassword,
+        @NotNull String oldPassword
+    ) throws DBException {
+        DBPConnectionConfiguration cfg = container.getActualConnectionConfiguration();
+        String url = cfg.getUrl();
+
+        try {
+            Driver jdbcDriver = container
+                .getDriver()
+                .getDefaultDriverLoader()
+                .getDriverInstance(monitor);
+            ClassLoader loader = jdbcDriver.getClass().getClassLoader();
+
+            Class<?> db2DriverClass = loader.loadClass("com.ibm.db2.jcc.DB2Driver");
+
+            try {
+                BeanUtils.invokeStaticMethod(
+                    db2DriverClass,
+                    "changeDB2Password",
+                    new Class<?>[] {String.class, String.class, String.class, String.class},
+                    new Object[] {url, userName, oldPassword, newPassword}
+                );
+
+                cfg.setUserPassword(newPassword);
+            } catch (Throwable e) {
+                if (e instanceof SQLException sqlEx) {
+                    throw new DBDatabaseException("Error while changing password DB2", sqlEx);
+                }
+                throw new DBException("Cannot invoke method", e);
+            }
+        } catch (ClassNotFoundException e) {
+            throw new DBException("Cannot find DB2Driver", e);
+        }
     }
 
     @Override
@@ -329,6 +411,7 @@ public class DB2DataSource extends JDBCDataSource implements DBCQueryPlanner, IA
         return this;
     }
 
+    @NotNull
     @Override
     public Collection<DB2DataType> getLocalDataTypes()
     {
@@ -340,6 +423,7 @@ public class DB2DataSource extends JDBCDataSource implements DBCQueryPlanner, IA
         }
     }
 
+    @Nullable
     @Override
     public DB2DataType getLocalDataType(String typeName)
     {
@@ -391,7 +475,7 @@ public class DB2DataSource extends JDBCDataSource implements DBCQueryPlanner, IA
         if (ptSchemaname == null) {
             throw new DBCException(DB2Messages.dialog_explain_no_tables_found_ex);
         }
-        DB2PlanAnalyser plan = new DB2PlanAnalyser(query, ptSchemaname);
+        DB2ExecutionPlan plan = new DB2ExecutionPlan(query, ptSchemaname);
         plan.explain((JDBCSession) session);
         return plan;
     }
@@ -435,7 +519,7 @@ public class DB2DataSource extends JDBCDataSource implements DBCQueryPlanner, IA
         
         DB2PlanConfig cfg = new DB2PlanConfig();
         DBEObjectConfigurator configurator = GeneralUtils.adapt(cfg, DBEObjectConfigurator.class);
-        if (configurator == null || configurator.configureObject(monitor, this, cfg, Collections.emptyMap()) == null) {
+        if (configurator == null || configurator.configureObject(monitor, null, this, cfg, Collections.emptyMap()) == null) {
             return null;
         }
 
@@ -459,7 +543,7 @@ public class DB2DataSource extends JDBCDataSource implements DBCQueryPlanner, IA
     // --------------
 
     @Association
-    public Collection<DB2Schema> getSchemas(DBRProgressMonitor monitor) throws DBException
+    public Collection<DB2Schema> getSchemas(@NotNull DBRProgressMonitor monitor) throws DBException
     {
         return schemaCache.getAllObjects(monitor, this);
     }
@@ -472,7 +556,7 @@ public class DB2DataSource extends JDBCDataSource implements DBCQueryPlanner, IA
     @Association
     public Collection<DB2DataType> getDataTypes(DBRProgressMonitor monitor) throws DBException
     {
-        return dataTypeCache.getAllObjects(monitor, this);
+        return monitor == null ? dataTypeCache.getCachedObjects() : dataTypeCache.getAllObjects(monitor, this);
     }
 
     public DB2DataType getDataType(DBRProgressMonitor monitor, String name) throws DBException
@@ -483,7 +567,7 @@ public class DB2DataSource extends JDBCDataSource implements DBCQueryPlanner, IA
     @Association
     public Collection<DB2Tablespace> getTablespaces(DBRProgressMonitor monitor) throws DBException
     {
-        return tablespaceCache.getAllObjects(monitor, this);
+        return monitor == null ? tablespaceCache.getCachedObjects() : tablespaceCache.getAllObjects(monitor, this);
     }
 
     public DB2Tablespace getTablespace(DBRProgressMonitor monitor, String name) throws DBException
@@ -494,7 +578,7 @@ public class DB2DataSource extends JDBCDataSource implements DBCQueryPlanner, IA
     @Association
     public Collection<DB2StorageGroup> getStorageGroups(DBRProgressMonitor monitor) throws DBException
     {
-        return storagegroupCache.getAllObjects(monitor, this);
+        return monitor == null ? storagegroupCache.getCachedObjects() : storagegroupCache.getAllObjects(monitor, this);
     }
 
     public DB2StorageGroup getStorageGroup(DBRProgressMonitor monitor, String name) throws DBException
@@ -505,7 +589,7 @@ public class DB2DataSource extends JDBCDataSource implements DBCQueryPlanner, IA
     @Association
     public Collection<DB2Bufferpool> getBufferpools(DBRProgressMonitor monitor) throws DBException
     {
-        return bufferpoolCache.getAllObjects(monitor, this);
+        return monitor == null ? bufferpoolCache.getCachedObjects() : bufferpoolCache.getAllObjects(monitor, this);
     }
 
     public DB2Bufferpool getBufferpool(DBRProgressMonitor monitor, String name) throws DBException
@@ -516,7 +600,7 @@ public class DB2DataSource extends JDBCDataSource implements DBCQueryPlanner, IA
     @Association
     public Collection<DB2Wrapper> getWrappers(DBRProgressMonitor monitor) throws DBException
     {
-        return wrapperCache.getAllObjects(monitor, this);
+        return monitor == null ? wrapperCache.getCachedObjects() : wrapperCache.getAllObjects(monitor, this);
     }
 
     public DB2Wrapper getWrapper(DBRProgressMonitor monitor, String name) throws DBException
@@ -759,7 +843,7 @@ public class DB2DataSource extends JDBCDataSource implements DBCQueryPlanner, IA
     }
 
     @Override
-    public void collectObjectStatistics(DBRProgressMonitor monitor, boolean totalSizeOnly, boolean forceRefresh) throws DBException {
+    public void collectObjectStatistics(@NotNull DBRProgressMonitor monitor, boolean totalSizeOnly, boolean forceRefresh) throws DBException {
         if (hasStatistics && !forceRefresh) {
             return;
         }
@@ -768,7 +852,7 @@ public class DB2DataSource extends JDBCDataSource implements DBCQueryPlanner, IA
                 try (JDBCResultSet dbResult = dbStat.executeQuery("SELECT\n" +
                     "    TABSCHEMA,\n" +
                     "    SUM(DATA_OBJECT_P_SIZE + INDEX_OBJECT_P_SIZE + LONG_OBJECT_P_SIZE + LOB_OBJECT_P_SIZE + XML_OBJECT_P_SIZE) AS TOTAL_SIZE_IN_KB\n" +
-                    "FROM SYSIBMADM.ADMINTABINFO\n" +
+                    "FROM TABLE(ADMIN_GET_TAB_INFO('',''))\n" +
                     "GROUP BY TABSCHEMA")) {
                     while (dbResult.next()) {
                         String schemaName = JDBCUtils.safeGetStringTrimmed(dbResult, 1);
@@ -791,5 +875,4 @@ public class DB2DataSource extends JDBCDataSource implements DBCQueryPlanner, IA
             hasStatistics = true;
         }
     }
-
 }

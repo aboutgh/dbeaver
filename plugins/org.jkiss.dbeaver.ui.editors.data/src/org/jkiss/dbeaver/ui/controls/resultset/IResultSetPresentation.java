@@ -1,6 +1,6 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2023 DBeaver Corp and others
+ * Copyright (C) 2010-2026 DBeaver Corp and others
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -64,10 +64,25 @@ public interface IResultSetPresentation {
         CURRENT
     }
 
+    /**
+     * A predicate that decides whether the presentation can be shown or not.
+     * <p>
+     * An implementation may opt not to be opened. This can be useful if
+     * an interactive confirmation is shown with an option to cancel the operation.
+     *
+     * @param controller associated result set controller
+     * @return {@code true} if the presentation can be shown, or {@code false} if not
+     */
+    default boolean canShowPresentation(@NotNull IResultSetController controller) {
+        return true;
+    }
+
     void createPresentation(@NotNull IResultSetController controller, @NotNull Composite parent);
 
+    @NotNull
     IResultSetController getController();
 
+    @Nullable
     Control getControl();
 
     /**
@@ -117,6 +132,9 @@ public interface IResultSetPresentation {
     @Nullable
     DBDAttributeBinding getFocusAttribute();
 
+    @Nullable
+    ResultSetCellLocation getCurrentCellLocation();
+
     void setCurrentAttribute(@NotNull DBDAttributeBinding attribute);
 
     void showAttribute(@NotNull DBDAttributeBinding attribute);
@@ -131,7 +149,7 @@ public interface IResultSetPresentation {
      * Copies selected cells in supported Transfer formats.
      */
     @NotNull
-    Map<Transfer, Object> copySelection(ResultSetCopySettings settings);
+    Map<Transfer, Object> copySelection(@NotNull ResultSetCopySettings settings);
 
     void printResultSet();
 

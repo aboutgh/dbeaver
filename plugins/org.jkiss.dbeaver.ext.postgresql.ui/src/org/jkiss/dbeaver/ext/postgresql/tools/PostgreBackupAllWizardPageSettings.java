@@ -1,6 +1,6 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2023 DBeaver Corp and others
+ * Copyright (C) 2010-2026 DBeaver Corp and others
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,8 +21,8 @@ import org.eclipse.swt.layout.GridData;
 import org.eclipse.swt.widgets.Button;
 import org.eclipse.swt.widgets.Combo;
 import org.eclipse.swt.widgets.Composite;
-import org.eclipse.swt.widgets.Group;
 import org.jkiss.dbeaver.ext.postgresql.PostgreMessages;
+import org.jkiss.dbeaver.ext.postgresql.PostgreUIUtils;
 import org.jkiss.dbeaver.ext.postgresql.tasks.PostgreBackupAllSettings;
 import org.jkiss.dbeaver.ui.UIUtils;
 import org.jkiss.utils.CommonUtils;
@@ -48,12 +48,11 @@ public class PostgreBackupAllWizardPageSettings extends PostgreToolWizardPageSet
     public void createControl(Composite parent) {
         Composite composite = UIUtils.createPlaceholder(parent, 1);
         SelectionListener changeListener = SelectionListener.widgetSelectedAdapter(e -> updateState());
-        Group formatGroup = UIUtils.createControlGroup(
+        Composite formatGroup = UIUtils.createTitledComposite(
             composite,
             PostgreMessages.wizard_backup_all_page_setting_title_setting,
             2,
-            GridData.FILL_HORIZONTAL,
-            0);
+            GridData.FILL_HORIZONTAL);
         UIUtils.createControlLabel(formatGroup, PostgreMessages.wizard_backup_all_page_setting_label_encoding);
         encodingCombo = UIUtils.createEncodingCombo(formatGroup, null);
         encodingCombo.addSelectionListener(changeListener);
@@ -116,17 +115,18 @@ public class PostgreBackupAllWizardPageSettings extends PostgreToolWizardPageSet
         );
         addRolesPasswords.addSelectionListener(changeListener);
 
-        Group outputGroup = UIUtils.createControlGroup(
+        Composite outputGroup = UIUtils.createTitledComposite(
             composite,
             PostgreMessages.wizard_backup_page_setting_group_output,
             2,
-            GridData.FILL_HORIZONTAL,
-            0);
+            GridData.FILL_HORIZONTAL);
         createOutputFolderInput(outputGroup, settings);
         createExtraArgsInput(outputGroup);
 
         Composite extraGroup = UIUtils.createComposite(composite, 2);
         createSecurityGroup(extraGroup);
+
+        PostgreUIUtils.addCompatibilityInfoLabelForForks(composite, wizard, null);
 
         setControl(composite);
     }

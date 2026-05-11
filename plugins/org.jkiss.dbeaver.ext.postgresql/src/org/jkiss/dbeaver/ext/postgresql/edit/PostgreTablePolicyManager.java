@@ -1,6 +1,6 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2023 DBeaver Corp and others
+ * Copyright (C) 2010-2026 DBeaver Corp and others
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@ package org.jkiss.dbeaver.ext.postgresql.edit;
 import org.jkiss.code.NotNull;
 import org.jkiss.code.Nullable;
 import org.jkiss.dbeaver.DBException;
+import org.jkiss.dbeaver.ext.postgresql.model.PostgreRole;
 import org.jkiss.dbeaver.ext.postgresql.model.PostgreTable;
 import org.jkiss.dbeaver.ext.postgresql.model.PostgreTablePolicy;
 import org.jkiss.dbeaver.model.DBPDataSource;
@@ -33,18 +34,17 @@ import org.jkiss.dbeaver.model.impl.sql.edit.SQLObjectEditor;
 import org.jkiss.dbeaver.model.runtime.DBRProgressMonitor;
 import org.jkiss.dbeaver.model.struct.DBSObject;
 import org.jkiss.dbeaver.model.struct.cache.DBSObjectCache;
-import org.jkiss.utils.CommonUtils;
 
 import java.util.List;
 import java.util.Map;
-import java.util.StringJoiner;
+import java.util.stream.Collectors;
 
 public class PostgreTablePolicyManager
     extends SQLObjectEditor<PostgreTablePolicy, PostgreTable>
     implements DBEObjectRenamer<PostgreTablePolicy> {
 
     @Override
-    public long getMakerOptions(DBPDataSource dataSource) {
+    public long getMakerOptions(@NotNull DBPDataSource dataSource) {
         return FEATURE_EDITOR_ON_CREATE;
     }
 
@@ -56,11 +56,11 @@ public class PostgreTablePolicyManager
 
     @Override
     protected PostgreTablePolicy createDatabaseObject(
-        DBRProgressMonitor monitor,
-        DBECommandContext context,
-        Object container,
-        Object copyFrom,
-        Map<String, Object> options
+        @NotNull DBRProgressMonitor monitor,
+        @NotNull DBECommandContext context,
+        @NotNull Object container,
+        @Nullable Object copyFrom,
+        @NotNull Map<String, Object> options
     ) throws DBException {
         final PostgreTable table = (PostgreTable) container;
         return new PostgreTablePolicy(
@@ -71,60 +71,49 @@ public class PostgreTablePolicyManager
 
     @Override
     protected void addObjectCreateActions(
-        DBRProgressMonitor monitor,
-        DBCExecutionContext executionContext,
-        List<DBEPersistAction> actions,
-        ObjectCreateCommand command,
-        Map<String, Object> options
+        @NotNull DBRProgressMonitor monitor,
+        @NotNull DBCExecutionContext executionContext,
+        @NotNull List<DBEPersistAction> actions,
+        @NotNull ObjectCreateCommand command,
+        @NotNull Map<String, Object> options
     ) throws DBException {
-        final PostgreTablePolicy policy = command.getObject();
-        final StringJoiner sql = new StringJoiner("\n\t");
-
-        sql.add("CREATE POLICY " + getNameClause(policy));
-        sql.add("AS " + policy.getType());
-        sql.add("FOR " + policy.getEvent());
-
-        if (policy.getRole() != null) {
-            sql.add("TO " + DBUtils.getQuotedIdentifier(policy.getRole()));
-        }
-
-        if (CommonUtils.isNotEmpty(policy.getUsing())) {
-            sql.add("USING (" + policy.getUsing() + ")");
-        }
-
-        if (CommonUtils.isNotEmpty(policy.getCheck())) {
-            sql.add("WITH CHECK (" + policy.getCheck() + ")");
-        }
+        String sql = command.getObject().getObjectDefinitionText(monitor, options);
 
         actions.add(new SQLDatabasePersistAction(
             "Create policy",
-            sql.toString()
+            sql
         ));
     }
 
     @Override
     protected void addObjectModifyActions(
-        DBRProgressMonitor monitor,
-        DBCExecutionContext executionContext,
-        List<DBEPersistAction> actions,
-        ObjectChangeCommand command,
-        Map<String, Object> options
+        @NotNull DBRProgressMonitor monitor,
+        @NotNull DBCExecutionContext executionContext,
+        @NotNull List<DBEPersistAction> actions,
+        @NotNull ObjectChangeCommand command,
+        @NotNull Map<String, Object> options
     ) throws DBException {
-        final PostgreTablePolicy policy = command.getObject();
-        final StringJoiner sql = new StringJoiner("\n\t");
+        PostgreTablePolicy policy = command.getObject();
+        StringBuilder sql = new StringBuilder();
 
-        sql.add("ALTER POLICY " + getNameClause(policy));
+        sql.append("ALTER POLICY ").append(getNameClause(policy));
 
-        if (command.hasProperty("role")) {
-            sql.add("TO " + (policy.getRole() != null ? DBUtils.getQuotedIdentifier(policy.getRole()) : "PUBLIC"));
+        {
+            List<PostgreRole> roles = policy.getRoles();
+            sql.append("\n\tTO ");
+            if (!roles.isEmpty()) {
+                sql.append(roles.stream().map(DBUtils::getQuotedIdentifier).collect(Collectors.joining(",")));
+            } else {
+                sql.append("PUBLIC");
+            }
         }
 
         if (command.hasProperty("using")) {
-            sql.add("USING (" + policy.getUsing() + ")");
+            sql.append("\n\tUSING (").append(policy.getUsing()).append(")");
         }
 
         if (command.hasProperty("check")) {
-            sql.add("WITH CHECK (" + policy.getCheck() + ")");
+            sql.append("\n\tWITH CHECK (").append(policy.getCheck()).append(")");
         }
 
         actions.add(new SQLDatabasePersistAction(
@@ -135,11 +124,11 @@ public class PostgreTablePolicyManager
 
     @Override
     protected void addObjectDeleteActions(
-        DBRProgressMonitor monitor,
-        DBCExecutionContext executionContext,
-        List<DBEPersistAction> actions,
-        ObjectDeleteCommand command,
-        Map<String, Object> options
+        @NotNull DBRProgressMonitor monitor,
+        @NotNull DBCExecutionContext executionContext,
+        @NotNull List<DBEPersistAction> actions,
+        @NotNull ObjectDeleteCommand command,
+        @NotNull Map<String, Object> options
     ) throws DBException {
         actions.add(new SQLDatabasePersistAction(
             "Drop policy",
@@ -149,11 +138,11 @@ public class PostgreTablePolicyManager
 
     @Override
     protected void addObjectRenameActions(
-        DBRProgressMonitor monitor,
-        DBCExecutionContext executionContext,
-        List<DBEPersistAction> actions,
-        ObjectRenameCommand command,
-        Map<String, Object> options
+        @NotNull DBRProgressMonitor monitor,
+        @NotNull DBCExecutionContext executionContext,
+        @NotNull List<DBEPersistAction> actions,
+        @NotNull ObjectRenameCommand command,
+        @NotNull Map<String, Object> options
     ) {
         final DBPDataSource dataSource = command.getObject().getDataSource();
         actions.add(new SQLDatabasePersistAction(

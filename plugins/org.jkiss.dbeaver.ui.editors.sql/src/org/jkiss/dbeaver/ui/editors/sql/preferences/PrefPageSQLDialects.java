@@ -1,6 +1,6 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2023 DBeaver Corp and others
+ * Copyright (C) 2010-2026 DBeaver Corp and others
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,12 +26,10 @@ import org.eclipse.ui.IWorkbench;
 import org.eclipse.ui.IWorkbenchPreferencePage;
 import org.eclipse.ui.IWorkbenchPropertyPage;
 import org.jkiss.code.NotNull;
-import org.jkiss.dbeaver.Log;
 import org.jkiss.dbeaver.model.DBPDataSourceContainer;
 import org.jkiss.dbeaver.model.preferences.DBPPreferenceStore;
 import org.jkiss.dbeaver.model.sql.SQLDialectMetadata;
 import org.jkiss.dbeaver.model.sql.registry.SQLDialectDescriptor;
-import org.jkiss.dbeaver.model.sql.registry.SQLDialectRegistry;
 import org.jkiss.dbeaver.runtime.DBWorkbench;
 import org.jkiss.dbeaver.ui.DBeaverIcons;
 import org.jkiss.dbeaver.ui.UIUtils;
@@ -47,7 +45,6 @@ import java.util.List;
 public class PrefPageSQLDialects extends AbstractPrefPage implements IWorkbenchPreferencePage, IWorkbenchPropertyPage {
     public static final String PAGE_ID = "org.jkiss.dbeaver.preferences.main.sql.dialects"; //$NON-NLS-1$
 
-    private static final Log log = Log.getLog(PrefPageSQLDialects.class);
     private IAdaptable element;
 
     private SQLDialectMetadata curDialect;
@@ -86,9 +83,9 @@ public class PrefPageSQLDialects extends AbstractPrefPage implements IWorkbenchP
             gd.heightHint = 200;
             dialectTable.setLayoutData(gd);
 
-            List<SQLDialectDescriptor> dialects = SQLDialectRegistry.getInstance().getRootDialects();
+            List<SQLDialectMetadata> dialects = DBWorkbench.getPlatform().getSQLDialectRegistry().getRootDialects();
             //dialects.sort(Comparator.comparing(SQLDialectDescriptor::getLabel));
-            for (SQLDialectDescriptor dialect : dialects) {
+            for (SQLDialectMetadata dialect : dialects) {
                 createDialectItem(dialectTable, null, dialect);
             }
             dialectTable.addSelectionListener(new SelectionAdapter() {
@@ -118,7 +115,7 @@ public class PrefPageSQLDialects extends AbstractPrefPage implements IWorkbenchP
             }
             //UIUtils.createControlLabel(settingsGroup, SQLEditorMessages.pref_page_sql_format_label_settings, 2);
 
-            Group kwGroup = UIUtils.createControlGroup(settingsGroup, "Keywords", 2, GridData.FILL_HORIZONTAL, 0);
+            Composite kwGroup = UIUtils.createTitledComposite(settingsGroup, "Keywords", 2, GridData.FILL_HORIZONTAL);
             ((GridData)kwGroup.getLayoutData()).horizontalSpan = 2;
             reservedWordsText = UIUtils.createLabelTextAdvanced(kwGroup, "Reserved words", "", SWT.BORDER);
             dataTypesText = UIUtils.createLabelTextAdvanced(kwGroup, "Data Types", "", SWT.BORDER);
@@ -129,7 +126,7 @@ public class PrefPageSQLDialects extends AbstractPrefPage implements IWorkbenchP
             transactionKeywordsText = UIUtils.createLabelTextAdvanced(kwGroup, "Transaction keywords", "", SWT.BORDER);
             blockStatementsText = UIUtils.createLabelTextAdvanced(kwGroup, "Block statements", "", SWT.BORDER);
 
-            Group miscGroup = UIUtils.createControlGroup(settingsGroup, "Miscellaneous", 2, GridData.FILL_HORIZONTAL, 0);
+            Composite miscGroup = UIUtils.createTitledComposite(settingsGroup, "Miscellaneous", 2, GridData.FILL_HORIZONTAL);
             statementDelimiterText = UIUtils.createLabelText(miscGroup, "Statement delimiter", "", SWT.BORDER);
             dualTableNameText = UIUtils.createLabelText(miscGroup, "Dual table name", "", SWT.BORDER);
             testQueryText = UIUtils.createLabelText(miscGroup, "Test query", "", SWT.BORDER);
@@ -141,7 +138,7 @@ public class PrefPageSQLDialects extends AbstractPrefPage implements IWorkbenchP
         return composite;
     }
 
-    private void createDialectItem(Tree dialectTable, TreeItem parentItem, SQLDialectDescriptor dialect) {
+    private void createDialectItem(Tree dialectTable, TreeItem parentItem, SQLDialectMetadata dialect) {
         TreeItem di;
         if (!dialect.isHidden()) {
             di = parentItem == null ? new TreeItem(dialectTable, SWT.NONE) : new TreeItem(parentItem, SWT.NONE);
@@ -155,7 +152,7 @@ public class PrefPageSQLDialects extends AbstractPrefPage implements IWorkbenchP
         List<SQLDialectMetadata> subDialects = dialect.getSubDialects(true);
         subDialects.sort(Comparator.comparing(SQLDialectMetadata::getLabel));
         for (SQLDialectMetadata dm : subDialects) {
-            createDialectItem(dialectTable, di, (SQLDialectDescriptor) dm);
+            createDialectItem(dialectTable, di, dm);
         }
         if (di != null) {
             di.setExpanded(true);

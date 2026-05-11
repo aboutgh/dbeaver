@@ -1,6 +1,6 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2023 DBeaver Corp and others
+ * Copyright (C) 2010-2026 DBeaver Corp and others
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,6 +24,7 @@ import org.eclipse.swt.layout.GridLayout;
 import org.eclipse.swt.widgets.Composite;
 import org.eclipse.swt.widgets.Control;
 import org.eclipse.swt.widgets.Link;
+import org.jkiss.code.NotNull;
 import org.jkiss.dbeaver.model.DBPDataSourceContainer;
 import org.jkiss.dbeaver.model.connection.DBPConnectionConfiguration;
 import org.jkiss.dbeaver.model.connection.DBPDriverSubstitutionDescriptor;
@@ -72,11 +73,12 @@ public class DriverPropertiesDialogPage extends ConnectionPageAbstract
             }
 
             final DBPConnectionConfiguration tmpConnectionInfo = new DBPConnectionConfiguration();
-            final DataSourceDescriptor tempDataSource = new DataSourceDescriptor(
-                site.getDataSourceRegistry(),
-                activeDataSource.getId(),
-                activeDataSource.getDriver(),
-                tmpConnectionInfo);
+            final DataSourceDescriptor tempDataSource = site.getDataSourceRegistry()
+                .createDataSource(
+                    activeDataSource.getId(),
+                    activeDataSource.getDriver(),
+                    tmpConnectionInfo
+                );
 
             hostPage.saveSettings(tempDataSource);
             tmpConnectionInfo.getProperties().putAll(activeDataSource.getConnectionConfiguration().getProperties());
@@ -116,7 +118,7 @@ public class DriverPropertiesDialogPage extends ConnectionPageAbstract
     }
 
     @Override
-    public void saveSettings(DBPDataSourceContainer dataSource) {
+    public void saveSettings(@NotNull DBPDataSourceContainer dataSource) {
         if (propsControl != null) {
             propsControl.saveEditorValues();
         }

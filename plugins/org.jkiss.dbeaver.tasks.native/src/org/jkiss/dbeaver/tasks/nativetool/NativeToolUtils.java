@@ -1,6 +1,6 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2023 DBeaver Corp and others
+ * Copyright (C) 2010-2025 DBeaver Corp and others
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -34,8 +34,8 @@ public abstract class NativeToolUtils {
 
     private static final Log log = Log.getLog(NativeToolUtils.class);
     
-    public static final String VARIABLE_HOST = "host";
-    public static final String VARIABLE_DATABASE = "database";
+    public static final String VARIABLE_HOST = DBPConnectionConfiguration.VARIABLE_HOST;
+    public static final String VARIABLE_DATABASE = DBPConnectionConfiguration.VARIABLE_DATABASE;
     public static final String VARIABLE_SCHEMA = "schema";
     public static final String VARIABLE_TABLE = "table";
     public static final String VARIABLE_DATE = "date";
@@ -45,7 +45,7 @@ public abstract class NativeToolUtils {
     public static final String VARIABLE_DAY = "day";
     public static final String VARIABLE_HOUR = "hour";
     public static final String VARIABLE_MINUTE = "minute";
-    public static final String VARIABLE_CONN_TYPE = "connectionType";
+    public static final String VARIABLE_CONN_TYPE = DBPConnectionConfiguration.VARIABLE_CONN_TYPE;
 
     public static final String[] ALL_VARIABLES = {
         VARIABLE_HOST,
@@ -120,17 +120,25 @@ public abstract class NativeToolUtils {
                     hostname = config.getHostName();
                     port = config.getHostPort();
                 }
-            } else {
+            }
+            // Fall back to URI parsing if sample URL is not available
+            // or if extraction from sample URL pattern failed
+            if (CommonUtils.isEmpty(hostname)) {
                 try {
                     URI uri = URI.create(url);
                     hostname = uri.getHost();
-                    port = String.valueOf(uri.getPort());
+                    int uriPort = uri.getPort();
+                    if (uriPort > 0) {
+                        port = String.valueOf(uriPort);
+                    }
                 } catch (Exception e) {
                     log.error("Can't parse connection URL", e);
                 }
             }
         }
-        cmd.add("--host=" + hostname);
+        if (!CommonUtils.isEmpty(hostname)) {
+            cmd.add("--host=" + hostname);
+        }
         if (!CommonUtils.isEmpty(port)) {
             cmd.add("--port=" + port);
         }

@@ -1,6 +1,6 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2023 DBeaver Corp and others
+ * Copyright (C) 2010-2026 DBeaver Corp and others
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@
 package org.jkiss.dbeaver.ext.postgresql.model;
 
 import org.jkiss.code.NotNull;
+import org.jkiss.code.Nullable;
 import org.jkiss.dbeaver.DBException;
 import org.jkiss.dbeaver.model.connection.DBPConnectionConfiguration;
 import org.jkiss.dbeaver.model.exec.jdbc.JDBCResultSet;
@@ -31,6 +32,7 @@ import java.util.Map;
  * PostgreServerExtension
  */
 public interface PostgreServerExtension {
+    @NotNull
     String getServerTypeName();
 
     boolean supportsTransactions();
@@ -38,6 +40,9 @@ public interface PostgreServerExtension {
     boolean supportsOids();
 
     boolean supportsIndexes();
+
+    /** True if supports foreign/imported keys */
+    boolean supportsForeignKeys();
 
     boolean supportsMaterializedViews();
 
@@ -48,6 +53,9 @@ public interface PostgreServerExtension {
     boolean supportsTriggers();
 
     boolean supportsEventTriggers();
+
+    /** True if supports objects dependencies metadata reading */
+    boolean supportsDependencies();
 
     boolean supportsFunctionDefRead();
 
@@ -63,10 +71,16 @@ public interface PostgreServerExtension {
 
     boolean supportsCollations();
 
+    /**
+     * True if database can read data from the pg_catalog.pg_language system view.
+     */
+    boolean supportsLanguages();
+
     boolean supportsTablespaces();
 
     boolean supportsSequences();
 
+    @NotNull
     PostgreSequence createSequence(@NotNull PostgreSchema schema);
 
     boolean supportsRoles();
@@ -95,36 +109,68 @@ public interface PostgreServerExtension {
 
     boolean supportsTemporalAccessor();
 
-    boolean supportsTeblespaceLocation();
+    boolean supportsTablespaceLocation();
 
     boolean supportsTemplates();
 
     // Stored procedures support (workarounds for Redshift mostly)
     boolean supportsStoredProcedures();
+    @NotNull
     String getProceduresSystemTable();
+    @NotNull
     String getProceduresOidColumn();
 
     // Table DDL extraction
-    String readTableDDL(DBRProgressMonitor monitor, PostgreTableBase table) throws DBException;
+    @Nullable
+    String readTableDDL(@NotNull DBRProgressMonitor monitor, @NotNull PostgreTableBase table) throws DBException;
+
+    /** View/Materialized view DDL extraction */
+    @Nullable
+    String readViewDDL(@NotNull DBRProgressMonitor monitor, @NotNull PostgreViewBase view) throws DBException;
 
     // Custom schema cache.
-    JDBCObjectLookupCache<PostgreDatabase, PostgreSchema> createSchemaCache(PostgreDatabase database);
+    @NotNull
+    JDBCObjectLookupCache<PostgreDatabase, PostgreSchema> createSchemaCache(@NotNull PostgreDatabase database);
 
-    PostgreTableBase createRelationOfClass(PostgreSchema schema, PostgreClass.RelKind kind, JDBCResultSet dbResult);
+    /**
+     * @return relation or null if this relation type is not supported
+     */
+    @Nullable
+    PostgreTableBase createRelationOfClass(
+        @NotNull PostgreSchema schema,
+        @NotNull PostgreClass.RelKind kind,
+        @NotNull JDBCResultSet dbResult
+    );
 
-    PostgreTableBase createNewRelation(DBRProgressMonitor monitor, PostgreSchema schema, PostgreClass.RelKind kind, Object copyFrom) throws DBException;
+    @NotNull
+    PostgreTableBase createNewRelation(
+        @NotNull DBRProgressMonitor monitor,
+        @NotNull PostgreSchema schema,
+        @NotNull PostgreClass.RelKind kind,
+        @Nullable Object copyFrom
+    ) throws DBException;
 
-    void configureDialect(PostgreDialect dialect);
+    void configureDialect(@NotNull PostgreDialect dialect);
 
-    String getTableModifiers(DBRProgressMonitor monitor, PostgreTableBase tableBase, boolean alter);
-
-    PostgreTableColumn createTableColumn(DBRProgressMonitor monitor, PostgreSchema schema, PostgreTableBase table, JDBCResultSet dbResult) throws DBException;
+    @NotNull
+    String getTableModifiers(
+        @NotNull DBRProgressMonitor monitor,
+        @NotNull PostgreTableBase tableBase,
+        boolean alter,
+        @NotNull String delimiter
+    );
 
     // Initializes SSL config if SSL wasn't enabled explicitly. By default disables SSL explicitly.
-    void initDefaultSSLConfig(DBPConnectionConfiguration connectionInfo, Map<String, String> props);
+    void initDefaultSSLConfig(@NotNull DBPConnectionConfiguration connectionInfo, @NotNull Map<String, String> props);
 
-    List<PostgrePrivilege> readObjectPermissions(DBRProgressMonitor monitor, PostgreTableBase object, boolean includeNestedObjects) throws DBException;
+    @NotNull
+    List<PostgrePrivilege> readObjectPermissions(
+        @NotNull DBRProgressMonitor monitor,
+        @NotNull PostgreTableBase object,
+        boolean includeNestedObjects
+    ) throws DBException;
 
+    @NotNull
     Map<String, String> getDataTypeAliases();
 
     boolean supportsTableStatistics();
@@ -138,6 +184,9 @@ public interface PostgreServerExtension {
 
     /** True if supports special "Has OIDs" metadata column*/
     boolean supportsHasOidsColumn();
+
+    /** True if supports NULL/NOT NULL column data types modifiers */
+    boolean supportsColumnsRequiring();
 
     boolean supportsDatabaseSize();
 
@@ -165,6 +214,11 @@ public interface PostgreServerExtension {
      */
     boolean supportsCommentsOnRole();
 
+    /**
+     * Determines whether the database supports syntax like {@code ALTER DEFAULT PRIVILEGES FOR roleName...} or not
+     */
+    boolean supportsDefaultPrivileges();
+
     // Data types
 
     /** True if supports serials - serial types are auto-incrementing integer data types */
@@ -182,12 +236,16 @@ public interface PostgreServerExtension {
     boolean supportsGeneratedColumns();
 
     /** True if supports table rowid columns. Rowid columns usually replace primary key in the table */
-    boolean isHiddenRowidColumn(@NotNull PostgreAttribute attribute);
+    boolean isHiddenRowidColumn(@NotNull PostgreAttribute<?> attribute);
 
     /** Nor all databases support all types of columns. Also, some databases return comments with table DDL from the server-side */
     boolean supportsShowingOfExtraComments();
 
     boolean supportsKeyAndIndexRename();
+
+    /** True if supports altered storage strategies (TOAST) */
+    boolean supportsAlterStorageStrategy();
+    boolean supportsStorageModifier();
 
     /** Makes it possible to change the name of the user of the current user via UI */
     boolean supportsAlterUserChangePassword();
@@ -195,10 +253,14 @@ public interface PostgreServerExtension {
     /** COPY FROM STDIN is special command for the better table insert performance */
     boolean supportsCopyFromStdIn();
 
-    int getParameterBindType(DBSTypedObject type, Object value);
+    int getParameterBindType(@NotNull DBSTypedObject type, @NotNull Object value);
 
     /** Necessary for the "Truncate table" tool */
     int getTruncateToolModes();
+
+    boolean supportsAcl();
+
+    boolean supportsCustomDataTypes();
 
     boolean supportsDistinctForStatementsWithAcl();
 
@@ -217,4 +279,16 @@ public interface PostgreServerExtension {
      * or use standard {@code ALTER VIEW schema.view RENAME TO schema.view_new}.
      */
     boolean supportsAlterTableForViewRename();
+
+    /**
+     * True if database can use pg_dump and pg_restore clients without errors.
+     */
+    boolean supportsNativeClient();
+
+    boolean supportsJobs();
+
+    /**
+     * Determines if the provided object is a PostgreSQL-specific object (PGObject) like {@code com.amazon.redshift.util.RedshiftObject}.
+     */
+    boolean isPGObject(@NotNull Object object);
 }

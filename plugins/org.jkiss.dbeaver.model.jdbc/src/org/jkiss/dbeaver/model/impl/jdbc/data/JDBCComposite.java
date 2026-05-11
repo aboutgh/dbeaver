@@ -1,6 +1,6 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2023 DBeaver Corp and others
+ * Copyright (C) 2010-2026 DBeaver Corp and others
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -109,6 +109,9 @@ public abstract class JDBCComposite implements DBDComposite, DBDValueCloneable {
 
     public String getStringRepresentation()
     {
+        if (values != null) {
+            return Arrays.toString(values);
+        }
         return CommonUtils.toString(getRawValue());
     }
 
@@ -141,12 +144,13 @@ public abstract class JDBCComposite implements DBDComposite, DBDValueCloneable {
         }
     }
 
+    @NotNull
     @Override
-    public DBSDataType getDataType()
-    {
+    public DBSDataType getDataType() {
         return type;
     }
 
+    @Nullable
     @Override
     public Struct getRawValue() {
         if (rawStruct != null) {
@@ -172,12 +176,13 @@ public abstract class JDBCComposite implements DBDComposite, DBDValueCloneable {
     public Object getAttributeValue(@NotNull DBSAttributeBase attribute) {
         int position = attribute.getOrdinalPosition();
         if (position >= values.length) {
-            log.debug("Attribute index is out of range (" + position + ">=" + values.length + ")");
+            log.trace("Index for attribute '" + attribute.getName() + "' is out of range (" + position + ">=" + values.length + ")");
             return null;
         }
         return values[position];
     }
 
+    @Nullable
     public Object getAttributeValue(@NotNull String attrName) throws DBCException {
         DBSEntityAttribute attribute = DBUtils.findObject(attributes, attrName);
         return attribute == null ? null : getAttributeValue(attribute);
@@ -197,7 +202,7 @@ public abstract class JDBCComposite implements DBDComposite, DBDValueCloneable {
     }
 
     protected class StructType extends AbstractStructDataType<DBPDataSource> implements DBSEntity {
-        public StructType(DBPDataSource dataSource) {
+        public StructType(@NotNull DBPDataSource dataSource) {
             super(dataSource);
         }
 
@@ -212,6 +217,7 @@ public abstract class JDBCComposite implements DBDComposite, DBDValueCloneable {
             return Types.STRUCT;
         }
 
+        @NotNull
         @Override
         public DBPDataKind getDataKind() {
             return DBPDataKind.STRUCT;
@@ -233,8 +239,11 @@ public abstract class JDBCComposite implements DBDComposite, DBDValueCloneable {
     protected static class StructAttribute extends AbstractAttribute implements DBSEntityAttribute {
         final DBSDataType type;
         DBPDataKind dataKind;
-        public StructAttribute(DBSDataType type, int index, Object value) throws DBException
-        {
+        public StructAttribute(DBSDataType type, int index, Object value) throws DBException {
+            this("Attr" + index, type, index, value);
+        }
+
+        public StructAttribute(String name, DBSDataType type, int index, Object value) throws DBException {
             this.type = type;
             if (value instanceof CharSequence) {
                 dataKind = DBPDataKind.STRING;
@@ -251,11 +260,17 @@ public abstract class JDBCComposite implements DBDComposite, DBDValueCloneable {
             } else if (value instanceof byte[]) {
                 dataKind = DBPDataKind.BINARY;
                 setValueType(Types.BINARY);
+            } else if (value instanceof JDBCComposite) {
+                dataKind = DBPDataKind.STRUCT;
+                setValueType(Types.STRUCT);
+            } else if (value instanceof JDBCCollection) {
+                dataKind = DBPDataKind.ARRAY;
+                setValueType(Types.ARRAY);
             } else {
                 dataKind = DBPDataKind.OBJECT;
                 setValueType(Types.OTHER);
             }
-            setName("Attr" + index);
+            setName(name);
             setOrdinalPosition(index);
             setTypeName(dataKind.name());
         }
@@ -276,6 +291,7 @@ public abstract class JDBCComposite implements DBDComposite, DBDValueCloneable {
             dataKind = JDBCUtils.resolveDataKind(type.getDataSource(), getTypeName(), getTypeID());
         }
 
+        @NotNull
         @Override
         public DBPDataKind getDataKind()
         {
@@ -284,10 +300,9 @@ public abstract class JDBCComposite implements DBDComposite, DBDValueCloneable {
 
         @Override
         public boolean equals(Object obj) {
-            if (!(obj instanceof StructAttribute)) {
+            if (!(obj instanceof StructAttribute attr)) {
                 return false;
             }
-            StructAttribute attr = (StructAttribute)obj;
             return CommonUtils.equalObjects(name, attr.name) &&
                 valueType == attr.valueType &&
                 maxLength == attr.maxLength &&
@@ -354,5 +369,53 @@ public abstract class JDBCComposite implements DBDComposite, DBDValueCloneable {
         }
     */
 
+    protected class ArrayType extends StructType {
+        public ArrayType(@NotNull DBPDataSource dataSource) {
+            super(dataSource);
+        }
+
+        @NotNull
+        @Override
+        public String getTypeName() {
+            return "Array";
+        }
+
+        @Override
+        public int getTypeID() {
+            return Types.ARRAY;
+        }
+
+        @NotNull
+        @Override
+        public DBPDataKind getDataKind() {
+            return DBPDataKind.ARRAY;
+        }
+    }
+
+    protected class SimpleType extends StructType {
+        private final int typeId;
+
+        public SimpleType(@NotNull DBPDataSource dataSource, @Nullable Object value) {
+            super(dataSource);
+            this.typeId = JDBCUtils.getTypeIdFromValue(value);
+        }
+
+        @NotNull
+        @Override
+        public String getTypeName() {
+            return JDBCUtils.getTypeNameByTypeId(typeId);
+        }
+
+        @Override
+        public int getTypeID() {
+            return typeId;
+        }
+
+        @NotNull
+        @Override
+        public DBPDataKind getDataKind() {
+            return JDBCUtils.getDataKindByTypeID(typeId, null);
+        }
+    }
 
 }

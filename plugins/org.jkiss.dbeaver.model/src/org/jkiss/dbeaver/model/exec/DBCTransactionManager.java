@@ -1,6 +1,6 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2023 DBeaver Corp and others
+ * Copyright (C) 2010-2025 DBeaver Corp and others
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,8 +26,7 @@ import org.jkiss.dbeaver.model.runtime.DBRProgressMonitor;
 * Transaction manager.
  * It can be implemented by execution context.
  */
-public interface DBCTransactionManager
-{
+public interface DBCTransactionManager {
     DBPTransactionIsolation getTransactionIsolation() throws DBCException;
 
     void setTransactionIsolation(@NotNull DBRProgressMonitor monitor, @NotNull DBPTransactionIsolation transactionIsolation) throws DBCException;

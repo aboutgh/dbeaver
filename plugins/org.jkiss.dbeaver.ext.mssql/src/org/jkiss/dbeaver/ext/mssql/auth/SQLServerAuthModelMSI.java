@@ -1,6 +1,6 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2023 DBeaver Corp and others
+ * Copyright (C) 2010-2024 DBeaver Corp and others
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -37,13 +37,25 @@ public class SQLServerAuthModelMSI extends SQLServerAuthModelAbstract {
 
     public static final String ID = "sqlserver_msi";
 
+    @NotNull
+    @Override
+    public SQLServerAuthModelMSICredentials createCredentials() {
+        return new SQLServerAuthModelMSICredentials();
+    }
+
     @Override
     public boolean isUserPasswordApplicable() {
         return false;
     }
 
     @Override
-    public Object initAuthentication(@NotNull DBRProgressMonitor monitor, @NotNull DBPDataSource dataSource, @NotNull AuthModelDatabaseNativeCredentials credentials, @NotNull DBPConnectionConfiguration configuration, @NotNull Properties connProperties) throws DBException {
+    public Object initAuthentication(
+        @NotNull DBRProgressMonitor monitor,
+        @NotNull DBPDataSource dataSource,
+        @NotNull AuthModelDatabaseNativeCredentials credentials,
+        @NotNull DBPConnectionConfiguration configuration,
+        @NotNull Properties connProperties
+    ) throws DBException {
         connProperties.put(SQLServerConstants.PROP_CONNECTION_AUTHENTICATION, SQLServerConstants.AUTH_ACTIVE_DIRECTORY_MSI);
         if (!CommonUtils.isEmpty(configuration.getUserName())) {
             connProperties.put("msiClientId", configuration.getUserName());
@@ -54,7 +66,11 @@ public class SQLServerAuthModelMSI extends SQLServerAuthModelAbstract {
     }
 
     @Override
-    public void endAuthentication(@NotNull DBPDataSourceContainer dataSource, @NotNull DBPConnectionConfiguration configuration, @NotNull Properties connProperties) {
+    public void endAuthentication(
+        @NotNull DBPDataSourceContainer dataSource,
+        @NotNull DBPConnectionConfiguration configuration,
+        @NotNull Properties connProperties
+    ) {
         super.endAuthentication(dataSource, configuration, connProperties);
     }
 

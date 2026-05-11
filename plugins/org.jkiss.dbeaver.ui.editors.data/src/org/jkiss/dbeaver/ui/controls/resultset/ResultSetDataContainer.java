@@ -1,6 +1,6 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2023 DBeaver Corp and others
+ * Copyright (C) 2010-2026 DBeaver Corp and others
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,10 +16,11 @@
  */
 package org.jkiss.dbeaver.ui.controls.resultset;
 
-import org.eclipse.core.runtime.IAdaptable;
 import org.jkiss.code.NotNull;
 import org.jkiss.code.Nullable;
+import org.jkiss.dbeaver.DBException;
 import org.jkiss.dbeaver.Log;
+import org.jkiss.dbeaver.model.DBPAdaptable;
 import org.jkiss.dbeaver.model.DBPContextProvider;
 import org.jkiss.dbeaver.model.DBPDataSource;
 import org.jkiss.dbeaver.model.DBUtils;
@@ -27,6 +28,7 @@ import org.jkiss.dbeaver.model.data.*;
 import org.jkiss.dbeaver.model.exec.*;
 import org.jkiss.dbeaver.model.impl.data.AttributeMetaDataProxy;
 import org.jkiss.dbeaver.model.impl.local.LocalResultSetMeta;
+import org.jkiss.dbeaver.model.impl.local.LocalStatement;
 import org.jkiss.dbeaver.model.struct.DBSDataContainer;
 import org.jkiss.dbeaver.model.struct.DBSObject;
 import org.jkiss.dbeaver.utils.GeneralUtils;
@@ -39,7 +41,7 @@ import java.util.List;
  * Client-side data container.
  * Wraps RSV model and original data container.
  */
-public class ResultSetDataContainer implements DBSDataContainer, DBPContextProvider, IAdaptable, DBDAttributeFilter {
+public class ResultSetDataContainer implements DBSDataContainer, DBPContextProvider, DBPAdaptable, DBDAttributeFilter {
 
     private static final Log log = Log.getLog(ResultSetDataContainer.class);
 
@@ -66,14 +68,16 @@ public class ResultSetDataContainer implements DBSDataContainer, DBPContextProvi
         return dataContainer.getParentObject();
     }
 
+    @NotNull
     @Override
     public DBPDataSource getDataSource() {
         return dataContainer.getDataSource();
     }
 
+    @NotNull
     @Override
     public String[] getSupportedFeatures() {
-        return new String[] {FEATURE_DATA_SELECT, FEATURE_DATA_COUNT};
+        return new String[] {FEATURE_DATA_SELECT, FEATURE_DATA_COUNT, FEATURE_DATA_READ_FETCHED};
     }
 
     public ResultSetDataContainerOptions getOptions() {
@@ -83,18 +87,22 @@ public class ResultSetDataContainer implements DBSDataContainer, DBPContextProvi
     @NotNull
     @Override
     public DBCStatistics readData(
-        @NotNull DBCExecutionSource source,
+        @Nullable DBCExecutionSource source,
         @NotNull DBCSession session,
         @NotNull DBDDataReceiver dataReceiver,
         DBDDataFilter dataFilter,
         long firstRow,
         long maxRows,
         long flags,
-        int fetchSize) throws DBCException
-    {
-        filterAttributes = proceedSelectedColumnsOnly(flags);
-        if (filterAttributes || proceedSelectedRowsOnly(flags)) {
+        int fetchSize
+    ) throws DBException {
+        boolean fetchedRowsOnly = proceedFetchedRowsOnly(flags);
+        boolean selectedRowsOnly = proceedSelectedRowsOnly(flags);
+        boolean selectedColumnsOnly = proceedSelectedColumnsOnly(flags);
 
+        filterAttributes = selectedColumnsOnly;
+
+        if (fetchedRowsOnly || selectedRowsOnly || selectedColumnsOnly) {
             long startTime = System.currentTimeMillis();
             DBCStatistics statistics = new DBCStatistics();
             statistics.setExecuteTime(System.currentTimeMillis() - startTime);
@@ -102,22 +110,14 @@ public class ResultSetDataContainer implements DBSDataContainer, DBPContextProvi
             //LocalSta
             ModelResultSet resultSet = new ModelResultSet(session, flags);
             long resultCount = 0;
-            try {
-                dataReceiver.fetchStart(session, resultSet, firstRow, maxRows);
+            try (resultSet) {
+                DBDDataReceiver.startFetchWorkflow(dataReceiver, session, resultSet, firstRow, maxRows);
                 while (!session.getProgressMonitor().isCanceled() && resultSet.nextRow()) {
-                    if (!proceedSelectedRowsOnly(flags) || options.getSelectedRows().contains(resultSet.curRow.getRowNumber())) {
+                    if (!selectedRowsOnly || options.getSelectedRows().contains(resultSet.curRow.getRowNumber())) {
                         dataReceiver.fetchRow(session, resultSet);
                     }
                     resultCount++;
                 }
-            } finally {
-                try {
-                    dataReceiver.fetchEnd(session, resultSet);
-                } catch (DBCException e) {
-                    log.error("Error while finishing result set fetch", e); //$NON-NLS-1$
-                }
-                resultSet.close();
-                dataReceiver.close();
             }
             statistics.setFetchTime(System.currentTimeMillis() - startTime);
             statistics.setRowsFetched(resultCount);
@@ -125,6 +125,10 @@ public class ResultSetDataContainer implements DBSDataContainer, DBPContextProvi
         } else {
             return dataContainer.readData(source, session, dataReceiver, dataFilter, firstRow, maxRows, flags, fetchSize);
         }
+    }
+
+    private boolean proceedFetchedRowsOnly(long flags) {
+        return (flags & DBSDataContainer.FLAG_USE_FETCHED_ROWS) != 0;
     }
 
     private boolean proceedSelectedColumnsOnly(long flags) {
@@ -136,16 +140,17 @@ public class ResultSetDataContainer implements DBSDataContainer, DBPContextProvi
     }
 
     @Override
-    public long countData(@NotNull DBCExecutionSource source, @NotNull DBCSession session, @Nullable DBDDataFilter dataFilter, long flags) throws DBCException {
+    public long countData(@NotNull DBCExecutionSource source, @NotNull DBCSession session, @Nullable DBDDataFilter dataFilter, long flags) throws DBException {
         if (proceedSelectedRowsOnly(flags)) {
             return options.getSelectedRows().size();
-        } else if (proceedSelectedColumnsOnly(flags)) {
+        } else if (proceedFetchedRowsOnly(flags) || proceedSelectedColumnsOnly(flags)) {
             return model.getRowCount();
         } else {
             return dataContainer.countData(source, session, dataFilter, flags);
         }
     }
 
+    @NotNull
     @Override
     public String getName() {
         return dataContainer.getName();
@@ -157,7 +162,10 @@ public class ResultSetDataContainer implements DBSDataContainer, DBPContextProvi
     }
 
     @Override
-    public <T> T getAdapter(Class<T> adapter) {
+    public <T> T getAdapter(@NotNull Class<T> adapter) {
+        if (adapter.isInstance(dataContainer)) {
+            return adapter.cast(dataContainer);
+        }
         Object result = GeneralUtils.adapt(dataContainer, adapter);
         if (result == null) {
             result = GeneralUtils.adapt(controller, adapter);
@@ -174,8 +182,9 @@ public class ResultSetDataContainer implements DBSDataContainer, DBPContextProvi
         return controller.getExecutionContext();
     }
 
+    @NotNull
     @Override
-    public DBDAttributeBinding[] filterAttributeBindings(DBDAttributeBinding[] attributes) {
+    public DBDAttributeBinding[] filterAttributeBindings(@NotNull DBDAttributeBinding[] attributes) {
         DBDDataFilter dataFilter = model.getDataFilter();
         List<DBDAttributeBinding> filtered = new ArrayList<>();
         DBDAttributeBinding[] preFiltered;
@@ -218,23 +227,27 @@ public class ResultSetDataContainer implements DBSDataContainer, DBPContextProvi
     private class ModelResultSet implements DBCResultSet, DBCResultFiltered {
 
         private final DBCSession session;
+        private DBCStatement localStatement;
         private final long flags;
         private ResultSetRow curRow;
         private CustomResultSetMeta meta;
 
         ModelResultSet(DBCSession session, long flags) {
             this.session = session;
+            this.localStatement = new LocalStatement(session, "");
             this.flags = flags;
         }
 
+        @NotNull
         @Override
         public DBCSession getSession() {
             return session;
         }
 
+        @NotNull
         @Override
         public DBCStatement getSourceStatement() {
-            return null;
+            return localStatement;
         }
 
         @Override
@@ -318,8 +331,8 @@ public class ResultSetDataContainer implements DBSDataContainer, DBPContextProvi
         }
 
         @Override
-        public void close() {
-            // do nothing
+        public void close() throws DBException {
+            localStatement.close();
         }
 
         private class CustomResultSetMeta extends LocalResultSetMeta {

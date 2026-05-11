@@ -1,6 +1,6 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2023 DBeaver Corp and others
+ * Copyright (C) 2010-2025 DBeaver Corp and others
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,8 +21,10 @@ import org.eclipse.ui.IWorkbenchPart;
 import org.jkiss.dbeaver.Log;
 import org.jkiss.dbeaver.model.DBUtils;
 import org.jkiss.dbeaver.model.data.DBDAttributeBinding;
+import org.jkiss.dbeaver.model.exec.DBCExecutionContext;
 import org.jkiss.dbeaver.model.struct.DBSDataContainer;
 import org.jkiss.dbeaver.model.struct.DBSEntity;
+import org.jkiss.dbeaver.registry.ApplicationPolicyProvider;
 import org.jkiss.dbeaver.runtime.DBWorkbench;
 import org.jkiss.dbeaver.ui.ActionUtils;
 import org.jkiss.dbeaver.ui.controls.resultset.IResultSetEditor;
@@ -94,10 +96,13 @@ public class ResultSetPropertyTester extends PropertyTester
                     return false;
                 }
                 DBDAttributeBinding attr = rsv.getActivePresentation().getCurrentAttribute();
-                return attr != null && rsv.getAttributeReadOnlyStatus(attr) == null;
+                return attr != null && rsv.getAttributeReadOnlyStatus(attr, true, true) == null;
             }
             case PROP_CAN_MOVE: {
                 if (actionsDisabled || !rsv.supportsNavigation()) return false;
+                if (ApplicationPolicyProvider.getInstance().isPolicyEnabled(ApplicationPolicyProvider.POLICY_DATA_EDIT)) {
+                    return false;
+                }
                 ResultSetRow currentRow = rsv.getCurrentRow();
                 if ("back".equals(expectedValue)) {
                     return currentRow != null && currentRow.getVisualNumber() > 0;
@@ -110,13 +115,16 @@ public class ResultSetPropertyTester extends PropertyTester
                 if (actionsDisabled || !rsv.hasData() || !rsv.supportsEdit()) {
                     return false;
                 }
+                if (ApplicationPolicyProvider.getInstance().isPolicyEnabled(ApplicationPolicyProvider.POLICY_DATA_EDIT)) {
+                    return false;
+                }
                 if ("edit".equals(expectedValue) || "inline".equals(expectedValue)) {
                     DBDAttributeBinding attr = rsv.getActivePresentation().getCurrentAttribute();
                     if (attr == null || !(rsv.getActivePresentation() instanceof IResultSetEditor)) {
                         return false;
                     }
                     if ("inline".equals(expectedValue)) {
-                        return rsv.getAttributeReadOnlyStatus(attr) == null;
+                        return rsv.getAttributeReadOnlyStatus(attr, true, false) == null;
                     } else {
                         return rsv.getCurrentRow() != null;
                     }
@@ -163,8 +171,17 @@ public class ResultSetPropertyTester extends PropertyTester
                     }
                 }
                 return false;
-            case PROP_CAN_PERSIST_DATA:
-                return !rsv.getModel().isUpdateInProgress();
+            case PROP_CAN_PERSIST_DATA: {
+                if (rsv.getModel().isUpdateInProgress()) {
+                    return false;
+                }
+                DBCExecutionContext executionContext = rsv.getExecutionContext();
+                if (executionContext == null) {
+                    return false;
+                }
+                return rsv.getModel().getReadOnlyStatus(
+                    executionContext.getDataSource().getContainer()) == null;
+            }
         }
         return false;
     }

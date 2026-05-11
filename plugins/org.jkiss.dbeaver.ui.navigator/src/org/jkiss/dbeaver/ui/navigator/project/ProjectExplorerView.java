@@ -1,6 +1,6 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2023 DBeaver Corp and others
+ * Copyright (C) 2010-2026 DBeaver Corp and others
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,6 +25,7 @@ import org.eclipse.swt.graphics.Image;
 import org.eclipse.swt.layout.GridData;
 import org.eclipse.swt.widgets.Composite;
 import org.eclipse.swt.widgets.Label;
+import org.jkiss.code.NotNull;
 import org.jkiss.dbeaver.model.DBConstants;
 import org.jkiss.dbeaver.model.DBPDataSourceContainer;
 import org.jkiss.dbeaver.model.app.DBPPlatformDesktop;
@@ -37,7 +38,6 @@ import org.jkiss.dbeaver.ui.*;
 import org.jkiss.dbeaver.ui.actions.ObjectPropertyTester;
 import org.jkiss.dbeaver.ui.controls.ViewerColumnController;
 import org.jkiss.dbeaver.ui.internal.UINavigatorMessages;
-import org.jkiss.dbeaver.ui.project.PrefPageProjectResourceSettings;
 import org.jkiss.dbeaver.utils.ResourceUtils;
 import org.jkiss.utils.CommonUtils;
 
@@ -69,12 +69,13 @@ public class ProjectExplorerView extends DecoratedProjectView implements DBPProj
 
     @Override
     public DBNNode getRootNode() {
-        DBNProject projectNode = getModel().getRoot().getProjectNode(DBWorkbench.getPlatform().getWorkspace().getActiveProject());
-        return projectNode != null ? projectNode : getModel().getRoot();
+        DBNModel model = getGlobalNavigatorModel();
+        DBNProject projectNode = model.getRoot().getProjectNode(DBWorkbench.getPlatform().getWorkspace().getActiveProject());
+        return projectNode != null ? projectNode : model.getRoot();
     }
 
     @Override
-    public void createPartControl(Composite parent) {
+    public void createPartControl(@NotNull Composite parent) {
         treeContainer = UIUtils.createComposite(parent, 1);
         super.createPartControl(treeContainer);
 
@@ -91,8 +92,9 @@ public class ProjectExplorerView extends DecoratedProjectView implements DBPProj
         viewer.getTree().setHeaderVisible(true);
 
         UIExecutionQueue.queueExec(() -> {
-            createColumns(viewer);
-            updateTitle();
+            if (!viewer.getControl().isDisposed()) {
+                createColumns(viewer);
+            }
         });
         // Remove all non-resource nodes
         getNavigatorTree().getViewer().addFilter(new ViewerFilter() {
@@ -304,25 +306,20 @@ public class ProjectExplorerView extends DecoratedProjectView implements DBPProj
     }
 
     @Override
-    public void handleProjectAdd(DBPProject project) {
-
-    }
-
-    @Override
-    public void handleProjectRemove(DBPProject project) {
-
-    }
-
-    @Override
-    public void handleActiveProjectChange(DBPProject oldValue, DBPProject newValue) {
+    public void handleActiveProjectChange(@NotNull DBPProject oldValue, @NotNull DBPProject newValue) {
         updateRepresentation();
     }
     
     private void updateRepresentation() {
         UIExecutionQueue.queueExec(() -> {
+            if (getNavigatorTree().isDisposed()) {
+                return;
+            }
             getNavigatorTree().reloadTree(getRootNode());
-            updateTitle();
-            boolean viewable = ObjectPropertyTester.nodeProjectHasPermission(getRootNode(), RMConstants.PERMISSION_PROJECT_RESOURCE_VIEW);
+            boolean viewable = ObjectPropertyTester.nodeProjectHasPermission(
+                getRootNode(),
+                RMConstants.PERMISSION_PROJECT_RESOURCE_VIEW
+            );
             getNavigatorTree().setVisible(viewable);
             treeViewLayoutInfo.exclude = !viewable;
             lockPlaceholder.setVisible(!viewable);
@@ -330,18 +327,6 @@ public class ProjectExplorerView extends DecoratedProjectView implements DBPProj
             treeContainer.layout(true, true);
         });
         //columnController.autoSizeColumns();
-    }
-
-    private void updateTitle() {
-        setPartName("Project - " + getRootNode().getNodeName());
-    }
-
-    public void configureView() {
-        //columnController.configureColumns();
-        DBPProject activeProject = DBWorkbench.getPlatform().getWorkspace().getActiveProject();
-        if (activeProject != null) {
-            UIUtils.showPreferencesFor(getSite().getShell(), activeProject.getEclipseProject(), PrefPageProjectResourceSettings.PAGE_ID);
-        }
     }
 
 }

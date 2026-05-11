@@ -1,6 +1,6 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2023 DBeaver Corp and others
+ * Copyright (C) 2010-2026 DBeaver Corp and others
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,16 +17,10 @@
 package org.jkiss.dbeaver.ui.app.standalone;
 
 import org.eclipse.jface.dialogs.IMessageProvider;
-import org.eclipse.jface.preference.IPreferenceNode;
-import org.eclipse.jface.preference.IPreferencePage;
-import org.eclipse.jface.preference.IPreferencePageContainer;
-import org.eclipse.jface.preference.PreferenceManager;
-import org.eclipse.jface.preference.PreferenceNode;
-import org.eclipse.jface.preference.PreferencePage;
+import org.eclipse.jface.preference.*;
 import org.eclipse.jface.resource.FontRegistry;
 import org.eclipse.jface.resource.ImageDescriptor;
 import org.eclipse.jface.util.IPropertyChangeListener;
-import org.eclipse.jface.util.PropertyChangeEvent;
 import org.eclipse.jface.viewers.ITreeContentProvider;
 import org.eclipse.jface.viewers.Viewer;
 import org.eclipse.swt.graphics.FontData;
@@ -37,25 +31,16 @@ import org.eclipse.swt.widgets.Control;
 import org.eclipse.ui.PlatformUI;
 import org.eclipse.ui.dialogs.FilteredTree;
 import org.eclipse.ui.internal.WorkbenchPlugin;
-import org.eclipse.ui.internal.themes.ColorDefinition;
-import org.eclipse.ui.internal.themes.FontDefinition;
-import org.eclipse.ui.internal.themes.ICategorizedThemeElementDefinition;
-import org.eclipse.ui.internal.themes.IHierarchalThemeElementDefinition;
-import org.eclipse.ui.internal.themes.IThemeElementDefinition;
-import org.eclipse.ui.internal.themes.IThemeRegistry;
-import org.eclipse.ui.internal.themes.ThemeElementCategory;
-import org.eclipse.ui.internal.themes.WorkbenchThemeManager;
+import org.eclipse.ui.internal.themes.*;
 import org.eclipse.ui.themes.ITheme;
 import org.eclipse.ui.themes.IThemeManager;
+import org.jkiss.code.NotNull;
 import org.jkiss.dbeaver.ui.DBIconBinary;
 import org.jkiss.dbeaver.ui.DBeaverIcons;
+import org.jkiss.dbeaver.ui.UIUtils;
+import org.jkiss.dbeaver.ui.preferences.PrefPageConstants;
 
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 
 public class FontPreferenceOverrides {
 
@@ -67,7 +52,7 @@ public class FontPreferenceOverrides {
         private final IThemeRegistry themeRegistry = WorkbenchPlugin.getDefault().getThemeRegistry();
         private final IThemeManager themeManager;
         private IThemeRegistry registry;
-        private IPropertyChangeListener themeChangeListener;
+        private final IPropertyChangeListener themeChangeListener;
         private ITheme currentTheme;
         
         public FilteredThemeContentProvider(Set<String> prefIdsToHide) {
@@ -124,9 +109,7 @@ public class FontPreferenceOverrides {
                 return true;
             if (string == null || string2 == null)
                 return false;
-            if (string.equals(string2))
-                return true;
-            return false;
+            return string.equals(string2);
         }
 
         private Object[] getCategoryChildren(String categoryId) {
@@ -174,7 +157,7 @@ public class FontPreferenceOverrides {
                     list.add(fontDefinition);
                 }
             }
-            return list.toArray(new Object[list.size()]);
+            return list.toArray(new Object[0]);
         }
 
         private boolean parentIsInSameCategory(ColorDefinition definition) {
@@ -233,11 +216,8 @@ public class FontPreferenceOverrides {
 
         @Override
         public boolean hasChildren(Object element) {            
-            if (element instanceof ThemeElementCategory) {
-                if (isIdToHide(((ThemeElementCategory)element).getId())) {
-                    return false;
-                }
-                return true;
+            if (element instanceof ThemeElementCategory elc) {
+                return !isIdToHide(elc.getId());
             }
 
             IHierarchalThemeElementDefinition def = (IHierarchalThemeElementDefinition) element;
@@ -268,7 +248,7 @@ public class FontPreferenceOverrides {
         }
 
         @Override
-        public Object[] getElements(Object inputElement) {            
+        public Object[] getElements(Object inputElement) {
             ArrayList<Object> list = new ArrayList<>();
             Object[] uncatChildren = getCategoryChildren(null);
             list.addAll(Arrays.asList(uncatChildren));
@@ -283,7 +263,7 @@ public class FontPreferenceOverrides {
                     }
                 }
             }
-            return list.toArray(new Object[list.size()]);
+            return list.toArray(new Object[0]);
         }
 
         @Override
@@ -425,8 +405,8 @@ public class FontPreferenceOverrides {
     }
     
     private static class FontPreferenceNodePageOverride extends PreferenceNode {
-        private PreferenceNode originalNode;
-        private Set<String> prefIdsToHide;
+        private final PreferenceNode originalNode;
+        private final Set<String> prefIdsToHide;
         private IPreferencePage page = null;
         
         public FontPreferenceNodePageOverride(PreferenceNode originalNode, Set<String> prefIdsToHide) {
@@ -484,8 +464,10 @@ public class FontPreferenceOverrides {
         }   
     }
 
-    public static void hideFontPrefs(PreferenceManager pm, Set<String> prefIdsToHide) {
-        String wbPrefPageId = ApplicationWorkbenchAdvisor.WORKBENCH_PREF_PAGE_ID ;
+    public static void hideFontPrefs(@NotNull Set<String> prefIdsToHide) {
+        PreferenceManager pm = PlatformUI.getWorkbench().getPreferenceManager();
+
+        String wbPrefPageId = PrefPageConstants.WORKBENCH_PREF_PAGE_ID ;
         String viewsCatId = wbPrefPageId  + "/org.eclipse.ui.preferencePages.Views";
         String fontsPrefPageId = wbPrefPageId + "/org.eclipse.ui.preferencePages.Views/org.eclipse.ui.preferencePages.ColorsAndFonts";
         
@@ -499,19 +481,16 @@ public class FontPreferenceOverrides {
     }
 
     public static void overrideFontPrefValues(Map<String, List<String>> fontOverrides) {
-        WorkbenchThemeManager.getInstance().addPropertyChangeListener(new IPropertyChangeListener() {
-            @Override
-            public void propertyChange(PropertyChangeEvent event) {
-                String fontPropertyId = event.getProperty();
-                List<String> fontIdsToOverride = fontOverrides.get(fontPropertyId);
-                if (fontIdsToOverride != null) {
-                    FontRegistry fonts = WorkbenchThemeManager.getInstance().getCurrentTheme().getFontRegistry();
-                    FontData[] data = fonts.getFontData(fontPropertyId);
-                    for (String fontId: fontIdsToOverride) {
-                        fonts.put(fontId, data);
-                    }
+        WorkbenchThemeManager.getInstance().addPropertyChangeListener(event -> {
+            String fontPropertyId = event.getProperty();
+            List<String> fontIdsToOverride = fontOverrides.get(fontPropertyId);
+            if (fontIdsToOverride != null) {
+                FontRegistry fonts = UIUtils.getCurrentTheme().getFontRegistry();
+                FontData[] data = fonts.getFontData(fontPropertyId);
+                for (String fontId: fontIdsToOverride) {
+                    fonts.put(fontId, data);
                 }
             }
-        });        
+        });
     }
 }

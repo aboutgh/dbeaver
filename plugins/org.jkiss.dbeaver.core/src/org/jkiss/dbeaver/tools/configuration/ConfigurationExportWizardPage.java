@@ -1,6 +1,6 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2023 DBeaver Corp and others
+ * Copyright (C) 2010-2026 DBeaver Corp and others
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,15 +17,13 @@
 package org.jkiss.dbeaver.tools.configuration;
 
 import org.eclipse.jface.wizard.WizardPage;
+import org.eclipse.swt.SWT;
 import org.eclipse.swt.layout.GridData;
 import org.eclipse.swt.widgets.Composite;
-import org.eclipse.swt.widgets.Group;
-import org.eclipse.swt.widgets.Text;
 import org.jkiss.code.NotNull;
 import org.jkiss.dbeaver.core.CoreMessages;
 import org.jkiss.dbeaver.ui.UIUtils;
 import org.jkiss.dbeaver.ui.controls.TextWithOpenFile;
-import org.jkiss.dbeaver.ui.controls.TextWithOpenFolder;
 import org.jkiss.utils.CommonUtils;
 
 import java.nio.file.InvalidPathException;
@@ -44,19 +42,19 @@ public class ConfigurationExportWizardPage extends WizardPage {
     @Override
     public void createControl(@NotNull Composite parent) {
         Composite composite = UIUtils.createComposite(parent, 1);
-        Group exportSettingsGroup = UIUtils.createControlGroup(
+        Composite exportSettingsGroup = UIUtils.createTitledComposite(
             composite,
             CoreMessages.dialog_workspace_export_wizard_group,
             2,
-            GridData.FILL_BOTH,
-            0
+            GridData.FILL_BOTH
         );
 
         UIUtils.createControlLabel(exportSettingsGroup, CoreMessages.dialog_workspace_export_wizard_file_name);
         file = new TextWithOpenFile(exportSettingsGroup, CoreMessages.dialog_workspace_export_wizard_file_path_dialog,
             new String[]{
                 "*.zip"
-            }
+            },
+            SWT.SAVE | SWT.SINGLE, false
         );
         file.setLayoutData(new GridData(GridData.FILL_HORIZONTAL));
         file.getTextControl().addModifyListener(e -> updateState());

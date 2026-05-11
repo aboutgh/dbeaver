@@ -1,7 +1,6 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2023 DBeaver Corp and others
- * Copyright (C) 2011-2012 Eugene Fradkin (eugene.fradkin@gmail.com)
+ * Copyright (C) 2010-2025 DBeaver Corp and others
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,7 +18,6 @@ package org.jkiss.dbeaver.ui.dialogs.driver;
 
 import org.eclipse.jface.viewers.*;
 import org.eclipse.swt.SWT;
-import org.eclipse.swt.graphics.Font;
 import org.eclipse.swt.graphics.Image;
 import org.eclipse.swt.layout.GridData;
 import org.eclipse.swt.widgets.Composite;
@@ -37,6 +35,7 @@ import org.jkiss.dbeaver.registry.DataSourceRegistry;
 import org.jkiss.dbeaver.registry.driver.DriverDescriptor;
 import org.jkiss.dbeaver.registry.driver.DriverUtils;
 import org.jkiss.dbeaver.ui.DBeaverIcons;
+import org.jkiss.dbeaver.ui.DefaultViewerToolTipSupport;
 import org.jkiss.dbeaver.ui.UIUtils;
 import org.jkiss.utils.CommonUtils;
 
@@ -50,7 +49,6 @@ import java.util.*;
 public class DriverTreeViewer extends TreeViewer {
 
     private List<DBPDataSourceProviderDescriptor> providers;
-    private Font boldFont;
     private final Map<String,DriverCategory> categories = new HashMap<>();
     private final List<Object> driverList = new ArrayList<>();
     private boolean sortByName = false;
@@ -112,8 +110,6 @@ public class DriverTreeViewer extends TreeViewer {
 
     public DriverTreeViewer(Composite parent, int style) {
         super(parent, style);
-        boldFont = UIUtils.makeBoldFont(parent.getFont());
-        parent.addDisposeListener(e -> UIUtils.dispose(boldFont));
     }
 
     public void initDrivers(List<DBPDataSourceProviderDescriptor> providers, boolean expandRecent)
@@ -124,16 +120,19 @@ public class DriverTreeViewer extends TreeViewer {
             this.providers = DataSourceProviderRegistry.getInstance().getEnabledDataSourceProviders();
         }
 
-        TreeColumn nameColumn = new TreeColumn(getTree(), SWT.LEFT);
-        nameColumn.setText("Name");
-        nameColumn.addListener(SWT.Selection, new DriversSortListener(nameColumn, true));
+        new DefaultViewerToolTipSupport(this);
 
-        TreeColumn usersColumn = new TreeColumn(getTree(), SWT.LEFT);
-        usersColumn.setText("#");
-        usersColumn.addListener(SWT.Selection, new DriversSortListener(usersColumn, false));
+        TreeViewerColumn nameColumn = new TreeViewerColumn(this, SWT.LEFT);
+        nameColumn.getColumn().setText("Name");
+        nameColumn.getColumn().addListener(SWT.Selection, new DriversSortListener(nameColumn.getColumn(), true));
+        nameColumn.setLabelProvider(new ViewLabelProvider());
+
+        TreeViewerColumn usersColumn = new TreeViewerColumn(this, SWT.LEFT);
+        usersColumn.getColumn().setText("#");
+        usersColumn.getColumn().addListener(SWT.Selection, new DriversSortListener(usersColumn.getColumn(), false));
+        usersColumn.setLabelProvider(new ViewLabelProvider());
 
         this.setContentProvider(new ViewContentProvider());
-        this.setLabelProvider(new ViewLabelProvider());
 
         this.getControl().setLayoutData(new GridData(GridData.FILL_BOTH));
 
@@ -297,8 +296,7 @@ public class DriverTreeViewer extends TreeViewer {
         }
     }
 
-    class ViewLabelProvider extends CellLabelProvider implements ILabelProvider
-    {
+    class ViewLabelProvider extends CellLabelProvider implements ILabelProvider {
 
         @Override
         public void update(ViewerCell cell) {
@@ -366,6 +364,17 @@ public class DriverTreeViewer extends TreeViewer {
                 return ((DriverCategory) element).name;
             } else if (element instanceof DriverDescriptor) {
                 return ((DriverDescriptor) element).getName();
+            } else {
+                return element.toString();
+            }
+        }
+
+        @Override
+        public String getToolTipText(Object element) {
+            if (element instanceof DataSourceProviderDescriptor) {
+                return ((DataSourceProviderDescriptor) element).getDescription();
+            } else if (element instanceof DriverDescriptor) {
+                return ((DriverDescriptor) element).getDescription();
             } else {
                 return element.toString();
             }

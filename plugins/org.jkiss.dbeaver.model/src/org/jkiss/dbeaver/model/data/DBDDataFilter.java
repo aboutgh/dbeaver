@@ -1,6 +1,6 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2023 DBeaver Corp and others
+ * Copyright (C) 2010-2026 DBeaver Corp and others
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@
 
 package org.jkiss.dbeaver.model.data;
 
+import org.jkiss.code.NotNull;
 import org.jkiss.code.Nullable;
 import org.jkiss.dbeaver.model.DBUtils;
 import org.jkiss.dbeaver.model.struct.DBSAttributeBase;
@@ -31,6 +32,7 @@ public class DBDDataFilter {
 
     private final List<DBDAttributeConstraint> constraints;
     private boolean anyConstraint; // means OR condition
+    private boolean useDisjunctiveNormalForm; // see setUseDisjunctiveNormalForm
     private String order;
     private String where;
 
@@ -38,11 +40,11 @@ public class DBDDataFilter {
         this.constraints = new ArrayList<>();
     }
 
-    public DBDDataFilter(List<DBDAttributeConstraint> constraints) {
+    public DBDDataFilter(@NotNull List<DBDAttributeConstraint> constraints) {
         this.constraints = constraints;
     }
 
-    public DBDDataFilter(DBDDataFilter source) {
+    public DBDDataFilter(@NotNull DBDDataFilter source) {
         constraints = new ArrayList<>(source.constraints.size());
         for (DBDAttributeConstraint column : source.constraints) {
             constraints.add(new DBDAttributeConstraint(column));
@@ -50,16 +52,37 @@ public class DBDDataFilter {
         this.order = source.order;
         this.where = source.where;
         this.anyConstraint = source.anyConstraint;
+        this.useDisjunctiveNormalForm = source.useDisjunctiveNormalForm;
     }
 
+    @NotNull
     public List<DBDAttributeConstraint> getConstraints() {
         return constraints;
     }
 
+    public boolean hasHiddenAttributes() {
+        for (DBDAttributeConstraint ac : getConstraints()) {
+            DBSAttributeBase attribute = ac.getAttribute();
+            if (!ac.isVisible() && attribute instanceof DBDAttributeBinding && DBDAttributeConstraint.isVisibleByDefault((DBDAttributeBinding) attribute)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public boolean hasPinnedAttributes() {
+        for (DBDAttributeConstraint ac : getConstraints()) {
+            if (ac.hasOption(DBDAttributeConstraintBase.ATTR_OPTION_PINNED)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     @Nullable
-    public DBDAttributeConstraint getConstraint(DBDAttributeBinding binding) {
+    public DBDAttributeConstraint getConstraint(@NotNull DBDAttributeBinding binding) {
         for (DBDAttributeConstraint co : constraints) {
-            if (binding.equals(co.getAttribute())) {
+            if (binding.matches(co.getAttribute(), false)) {
                 return co;
             }
         }
@@ -77,7 +100,7 @@ public class DBDDataFilter {
     }
 
     @Nullable
-    public DBDAttributeConstraint getConstraint(String name) {
+    public DBDAttributeConstraint getConstraint(@NotNull String name) {
         for (DBDAttributeConstraint co : constraints) {
             if (CommonUtils.equalObjects(co.getAttributeName(), name)) {
                 return co;
@@ -86,10 +109,11 @@ public class DBDDataFilter {
         return null;
     }
 
-    public void addConstraints(List<DBDAttributeConstraint> constraints) {
+    public void addConstraints(@NotNull List<DBDAttributeConstraint> constraints) {
         this.constraints.addAll(constraints);
     }
 
+    @NotNull
     public List<DBSAttributeBase> getOrderedVisibleAttributes() {
         List<DBDAttributeConstraint> visibleConstraints = new ArrayList<>();
         for (DBDAttributeConstraint constraint : constraints) {
@@ -113,6 +137,7 @@ public class DBDDataFilter {
         this.anyConstraint = anyConstraint;
     }
 
+    @Nullable
     public String getOrder() {
         return order;
     }
@@ -121,6 +146,7 @@ public class DBDDataFilter {
         this.order = order;
     }
 
+    @Nullable
     public String getWhere() {
         return where;
     }
@@ -258,7 +284,7 @@ public class DBDDataFilter {
      * @param source object to compare to
      * @return true if filters equals
      */
-    public boolean equalFilters(DBDDataFilter source, boolean compareOrders) {
+    public boolean equalFilters(@NotNull DBDDataFilter source, boolean compareOrders) {
         if (anyConstraint != source.anyConstraint) {
             return false;
         }
@@ -274,7 +300,7 @@ public class DBDDataFilter {
             CommonUtils.equalObjects(this.where, source.where);
     }
 
-    public boolean equalVisibility(DBDDataFilter dataFilter) {
+    public boolean equalVisibility(@NotNull DBDDataFilter dataFilter) {
         if (dataFilter.constraints.size() != constraints.size()) {
             return false;
         }
@@ -287,7 +313,7 @@ public class DBDDataFilter {
         return true;
     }
 
-    public boolean hasNameDuplicates(String name) {
+    public boolean hasNameDuplicates(@NotNull String name) {
         int count = 0;
         for (DBDAttributeConstraint c : constraints) {
             if (name.equalsIgnoreCase(c.getFullAttributeName())) {
@@ -297,8 +323,35 @@ public class DBDDataFilter {
         return count > 1;
     }
 
-    public void serialize(Map<String, Object> state) {
+    public void serialize(@NotNull Map<String, Object> state) {
 
     }
 
+    /**
+     * Changes interpretation of constraint values as disjunctive normal form (DNF).
+     * <p>
+     * Let's say we have two constraints:
+     * <ul>
+     *     <li>{@code x IN (1, 2, 3)}</li>
+     *     <li>{@code y IN (4, 5, 6)}</li>
+     * </ul>
+     * <p>
+     * If {@code useDisjunctiveNormalForm} is {@code true} constraints will be transformed as follows:
+     * <ul>
+     *     <li>{@code (x = 1 AND y = 4) OR (x = 2 AND y = 5) OR (x = 3 AND y = 6)}</li>
+     * </ul>
+     * <p>
+     * <b>Limitations:</b>
+     * <ul>
+     *     <li>All constraints must use the {@code IN} operator</li>
+     *     <li>All constraints must have the same number of values</li>
+     * </ul>
+     */
+    public void setUseDisjunctiveNormalForm(boolean useDisjunctiveNormalForm) {
+        this.useDisjunctiveNormalForm = useDisjunctiveNormalForm;
+    }
+
+    public boolean isUseDisjunctiveNormalForm() {
+        return useDisjunctiveNormalForm;
+    }
 }

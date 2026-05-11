@@ -1,6 +1,6 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2023 DBeaver Corp and others
+ * Copyright (C) 2010-2026 DBeaver Corp and others
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,10 +20,12 @@ import org.jkiss.code.NotNull;
 import org.jkiss.code.Nullable;
 import org.jkiss.dbeaver.Log;
 import org.jkiss.dbeaver.model.runtime.DBRProgressMonitor;
-import org.jkiss.dbeaver.registry.VersionUtils;
+import org.jkiss.dbeaver.registry.maven.versioning.ArtifactVersion;
 import org.jkiss.dbeaver.registry.maven.versioning.DefaultArtifactVersion;
+import org.jkiss.dbeaver.registry.maven.versioning.InvalidVersionSpecificationException;
 import org.jkiss.dbeaver.registry.maven.versioning.VersionRange;
 import org.jkiss.dbeaver.runtime.WebUtils;
+import org.jkiss.dbeaver.utils.VersionUtils;
 import org.jkiss.utils.CommonUtils;
 import org.jkiss.utils.IOUtils;
 import org.jkiss.utils.xml.SAXListener;
@@ -70,7 +72,7 @@ public class MavenArtifact implements IMavenIdentifier
     private String latestVersion;
     private String releaseVersion;
     private Date lastUpdate;
-    private List<String> snapshotVersions = new ArrayList<>();
+    private final List<String> snapshotVersions = new ArrayList<>();
     private final List<MavenArtifactVersion> localVersions = new ArrayList<>();
 
     private transient boolean metadataLoaded = false;
@@ -106,15 +108,15 @@ public class MavenArtifact implements IMavenIdentifier
             metadataPath += version + "/";
         }
         metadataPath += MAVEN_METADATA_XML;
-        monitor.subTask("Load metadata " + this + "");
+        monitor.subTask("Load metadata " + this);
 
-        try (InputStream mdStream = WebUtils.openConnection(metadataPath, getRepository().getAuthInfo(), null).getInputStream()) {
+        try (InputStream mdStream = WebUtils.openConnection(monitor, metadataPath, getRepository().getAuthInfo(), null).getInputStream()) {
             parseMetadata(mdStream);
         } catch (XMLException e) {
             log.warn("Error parsing artifact metadata", e);
         } catch (IOException e) {
             // Metadata xml not found. It happens in rare cases. Let's try to get directory listing
-            try (InputStream dirStream = WebUtils.openConnection(getBaseArtifactURL(), getRepository().getAuthInfo(), null).getInputStream()) {
+            try (InputStream dirStream = WebUtils.openConnection(monitor, getBaseArtifactURL(), getRepository().getAuthInfo(), null).getInputStream()) {
                 parseDirectory(dirStream);
             } catch (XMLException e1) {
                 log.warn("Error parsing artifact directory", e);
@@ -162,7 +164,7 @@ public class MavenArtifact implements IMavenIdentifier
             boolean invalid = false;
 
             @Override
-            public void saxStartElement(SAXReader reader, String namespaceURI, String localName, Attributes atts) throws XMLException {
+            public void saxStartElement(@NotNull SAXReader reader, @Nullable String namespaceURI, @NotNull String localName, @NotNull Attributes attributes) throws XMLException {
                 if ("snapshotVersion".equals(localName)) {
                     insideSnapshotVersion = true;
                 }
@@ -170,7 +172,7 @@ public class MavenArtifact implements IMavenIdentifier
             }
 
             @Override
-            public void saxText(SAXReader reader, String data) throws XMLException {
+            public void saxText(@NotNull SAXReader reader, @NotNull String data) throws XMLException {
                 if (insideSnapshotVersion) {
                     if ("value".equals(lastTag)) {
                         currentSnapshotVersion = data;
@@ -200,7 +202,7 @@ public class MavenArtifact implements IMavenIdentifier
             }
 
             @Override
-            public void saxEndElement(SAXReader reader, String namespaceURI, String localName) throws XMLException {
+            public void saxEndElement(@NotNull SAXReader reader, @Nullable String namespaceURI, @NotNull String localName) throws XMLException {
                 if (localName.equals("snapshotVersion")) {
                     if (!invalid) {
                         snapshotVersions.add(currentSnapshotVersion);
@@ -304,10 +306,12 @@ public class MavenArtifact implements IMavenIdentifier
         return repository.getUrl() + dir + "/";
     }
 
-    String getFileURL(String version, String fileType) {
-        if (getRepository().isSnapshot()) {
-            return getBaseArtifactURL() + versions.get(0) + "/" + getVersionFileName(VersionUtils.findLatestVersion(snapshotVersions),
-                fileType);
+    String getFileURL(String version, String fileType, boolean snapshotVersion) {
+        if (snapshotVersion) {
+            return getBaseArtifactURL() + versions.get(0) + "/" + getVersionFileName(
+                VersionUtils.findLatestVersion(snapshotVersions),
+                fileType
+            );
         }
 
         return getBaseArtifactURL() + version + "/" + getVersionFileName(version, fileType);
@@ -339,10 +343,16 @@ public class MavenArtifact implements IMavenIdentifier
         return null;
     }
 
-    private MavenArtifactVersion makeLocalVersion(DBRProgressMonitor monitor, String versionStr, boolean setActive, boolean resolveOptionalDependencies) throws IllegalArgumentException, IOException {
+    private MavenArtifactVersion makeLocalVersion(
+        DBRProgressMonitor monitor,
+        String versionStr,
+        boolean setActive,
+        boolean resolveOptionalDependencies,
+        boolean snapshotVersion
+    ) throws IllegalArgumentException, IOException {
         MavenArtifactVersion version = getVersion(versionStr);
         if (version == null) {
-            version = new MavenArtifactVersion(monitor, this, versionStr, resolveOptionalDependencies);
+            version = new MavenArtifactVersion(monitor, this, versionStr, resolveOptionalDependencies, snapshotVersion);
             localVersions.add(version);
         }
         return version;
@@ -384,19 +394,28 @@ public class MavenArtifact implements IMavenIdentifier
                     break;
                 default:
                     if (snapshotVersion) {
+                        if (snapshotVersions.isEmpty()) {
+                            throw new IOException("Artifact '" + this + "' has empty snapshot version list");
+                        }
                         versionInfo = VersionUtils.findLatestVersion(snapshotVersions);
                         break;
                     }
                     if (versionRef.startsWith("{") && versionRef.endsWith("}")) {
                         // Regex - find most recent version matching this pattern
                         String regex = versionRef.substring(1, versionRef.length() - 1);
-                    try {
+                        try {
                             Pattern versionPattern = Pattern.compile(regex);
                             List<String> versions = new ArrayList<>(allVersions);
                             versions.removeIf(s -> !versionPattern.matcher(s).matches());
                             versionInfo = VersionUtils.findLatestVersion(versions);
                         } catch (Exception e) {
                             throw new IOException("Bad version pattern: " + regex);
+                        }
+                    } else if (versionRef.startsWith("(") || versionRef.startsWith("[")) {
+                        try {
+                            versionInfo = findBestSuitableVersion(versionRef, allVersions);
+                        } catch (InvalidVersionSpecificationException e) {
+                            throw new IOException("Bad version range: " + versionRef);
                         }
                     } else {
                         versionInfo = getVersionFromSpec(versionRef);
@@ -421,7 +440,7 @@ public class MavenArtifact implements IMavenIdentifier
         MavenArtifactVersion localVersion = getVersion(versionInfo);
         if (localVersion == null) {
             try {
-                localVersion = makeLocalVersion(monitor, versionInfo, lookupVersion, resolveOptionalDependencies);
+                localVersion = makeLocalVersion(monitor, versionInfo, lookupVersion, resolveOptionalDependencies, snapshotVersion);
             } catch (IOException e) {
                 // Some IO error - not fatal
                 log.debug("Error loading version info: " + e.getMessage());
@@ -429,6 +448,21 @@ public class MavenArtifact implements IMavenIdentifier
         }
 
         return localVersion;
+    }
+
+    @Nullable
+    private static String findBestSuitableVersion(@NotNull String versionRef, @NotNull List<String> allVersions) throws InvalidVersionSpecificationException {
+        VersionRange range = VersionRange.createFromVersionSpec(versionRef);
+        ArtifactVersion best = null;
+        for (String version : allVersions) {
+            DefaultArtifactVersion candidate = new DefaultArtifactVersion(version);
+            if (range.containsVersion(candidate)) {
+                if (best == null || candidate.compareTo(best) > 0) {
+                    best = candidate;
+                }
+            }
+        }
+        return best != null ? best.toString() : null;
     }
 
     public static boolean versionMatches(String version, String versionSpec) {

@@ -1,7 +1,6 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2023 DBeaver Corp and others
- * Copyright (C) 2011-2012 Eugene Fradkin (eugene.fradkin@gmail.com)
+ * Copyright (C) 2010-2026 DBeaver Corp and others
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,6 +23,8 @@ import org.eclipse.jface.dialogs.IDialogSettings;
 import org.eclipse.osgi.util.NLS;
 import org.eclipse.swt.widgets.Composite;
 import org.eclipse.ui.ISharedImages;
+import org.jkiss.code.NotNull;
+import org.jkiss.code.Nullable;
 import org.jkiss.dbeaver.Log;
 import org.jkiss.dbeaver.ext.mysql.model.MySQLDataSource;
 import org.jkiss.dbeaver.ext.mysql.model.session.MySQLSessionManager;
@@ -40,6 +41,7 @@ import org.jkiss.dbeaver.ui.views.session.SessionManagerViewer;
 import org.jkiss.utils.CommonUtils;
 
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -60,13 +62,16 @@ public class MySQLSessionEditor extends AbstractSessionEditor
         super.createEditorControl(parent);
     }
 
+    @NotNull
     @Override
-    protected SessionManagerViewer createSessionViewer(DBCExecutionContext executionContext, Composite parent) {
-        return new SessionManagerViewer<>(this, parent, new MySQLSessionManager((MySQLDataSource) executionContext.getDataSource())) {
+    protected SessionManagerViewer<?> createSessionViewer(@NotNull DBCExecutionContext executionContext, @NotNull Composite parent) {
+        final MySQLDataSource dataSource = (MySQLDataSource) executionContext.getDataSource();
+        return new SessionManagerViewer<>(this, parent, new MySQLSessionManager(dataSource)) {
             private boolean hideSleeping;
+            private boolean showPerformance;
 
             @Override
-            protected void contributeToToolbar(DBAServerSessionManager sessionManager, IContributionManager contributionManager) {
+            protected void contributeToToolbar(@NotNull DBAServerSessionManager<?> sessionManager, @NotNull IContributionManager contributionManager) {
                 contributionManager.add(killSessionAction);
                 contributionManager.add(terminateQueryAction);
                 contributionManager.add(new Separator());
@@ -86,11 +91,28 @@ public class MySQLSessionEditor extends AbstractSessionEditor
                         }
                     }, true));
 
+                if (dataSource.supportsSysSchema()) {
+                    contributionManager.add(ActionUtils.makeActionContribution(
+                        new Action(MySQLUIMessages.editors_session_show_performance_text, Action.AS_CHECK_BOX) {
+                            {
+                                setToolTipText(MySQLUIMessages.editors_session_show_performance_tip);
+                                setImageDescriptor(DBeaverIcons.getImageDescriptor(UIIcon.SHOW_ALL_DETAILS));
+                                setChecked(showPerformance);
+                            }
+
+                            @Override
+                            public void run() {
+                                showPerformance = isChecked();
+                                refreshPart(MySQLSessionEditor.this, true);
+                            }
+                        }, true));
+                }
+
                 contributionManager.add(new Separator());
             }
 
             @Override
-            protected void onSessionSelect(DBAServerSession session) {
+            protected void onSessionSelect(@Nullable DBAServerSession session) {
                 super.onSessionSelect(session);
                 killSessionAction.setEnabled(session != null);
                 terminateQueryAction.setEnabled(session != null && !CommonUtils.isEmpty(session.getActiveQuery()));
@@ -98,15 +120,20 @@ public class MySQLSessionEditor extends AbstractSessionEditor
 
             @Override
             public Map<String, Object> getSessionOptions() {
+                Map<String, Object> options = new HashMap<>();
                 if (hideSleeping) {
-                    return Collections.singletonMap(MySQLSessionManager.OPTION_HIDE_SLEEPING, true);
+                    options.put(MySQLSessionManager.OPTION_HIDE_SLEEPING, true);
                 }
-                return super.getSessionOptions();
+                if (showPerformance) {
+                    options.put(MySQLSessionManager.OPTION_SHOW_PERFORMANCE, true);
+                }
+                return options;
             }
 
             @Override
             protected void loadSettings(IDialogSettings settings) {
                 hideSleeping = CommonUtils.toBoolean(settings.get("hideSleeping"));
+                showPerformance = CommonUtils.toBoolean(settings.get("showPerformance"));
                 super.loadSettings(settings);
             }
 
@@ -114,6 +141,7 @@ public class MySQLSessionEditor extends AbstractSessionEditor
             protected void saveSettings(IDialogSettings settings) {
                 super.saveSettings(settings);
                 settings.put("hideSleeping", hideSleeping);
+                settings.put("showPerformance", showPerformance);
             }
         };
     }

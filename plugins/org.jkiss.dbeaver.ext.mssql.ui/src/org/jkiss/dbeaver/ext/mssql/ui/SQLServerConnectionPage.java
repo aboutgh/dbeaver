@@ -1,6 +1,6 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2023 DBeaver Corp and others
+ * Copyright (C) 2010-2026 DBeaver Corp and others
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,21 +24,25 @@ import org.eclipse.swt.events.SelectionEvent;
 import org.eclipse.swt.graphics.Image;
 import org.eclipse.swt.layout.GridData;
 import org.eclipse.swt.layout.GridLayout;
-import org.eclipse.swt.layout.RowLayout;
-import org.eclipse.swt.widgets.*;
+import org.eclipse.swt.widgets.Button;
+import org.eclipse.swt.widgets.Composite;
+import org.eclipse.swt.widgets.Label;
+import org.eclipse.swt.widgets.Text;
+import org.jkiss.code.NotNull;
+import org.jkiss.code.Nullable;
 import org.jkiss.dbeaver.ext.mssql.SQLServerConstants;
 import org.jkiss.dbeaver.ext.mssql.SQLServerUtils;
 import org.jkiss.dbeaver.model.DBPDataSourceContainer;
+import org.jkiss.dbeaver.model.DBPImage;
 import org.jkiss.dbeaver.model.connection.DBPConnectionConfiguration;
 import org.jkiss.dbeaver.model.connection.DBPDriverConfigurationType;
+import org.jkiss.dbeaver.ui.DBeaverIcons;
 import org.jkiss.dbeaver.ui.IDialogPageProvider;
 import org.jkiss.dbeaver.ui.UIUtils;
 import org.jkiss.dbeaver.ui.dialogs.connection.ConnectionPageWithAuth;
 import org.jkiss.dbeaver.ui.dialogs.connection.DriverPropertiesDialogPage;
 import org.jkiss.dbeaver.ui.internal.UIConnectionMessages;
 import org.jkiss.utils.CommonUtils;
-
-import java.util.List;
 
 
 public class SQLServerConnectionPage extends ConnectionPageWithAuth implements IDialogPageProvider {
@@ -67,7 +71,7 @@ public class SQLServerConnectionPage extends ConnectionPageWithAuth implements I
 
     public SQLServerConnectionPage() {
         LOGO_AZURE = createImage("icons/azure_logo.png");
-        LOGO_BABELFISH = createImage("icons/bbfsh_logo.png");
+        LOGO_BABELFISH = createImage("icons/babelfish_logo.png");
         LOGO_SQLSERVER = createImage("icons/mssql_logo.png");
         LOGO_SYBASE = createImage("icons/sybase_logo.png");
     }
@@ -98,12 +102,11 @@ public class SQLServerConnectionPage extends ConnectionPageWithAuth implements I
         GridData gd = new GridData(GridData.FILL_BOTH);
         settingsGroup.setLayoutData(gd);
 
-        Group addrGroup = UIUtils.createControlGroup(
+        Composite addrGroup = UIUtils.createTitledComposite(
             settingsGroup,
             UIConnectionMessages.dialog_connection_server_label,
             4,
-            GridData.FILL_HORIZONTAL,
-            0
+            GridData.FILL_HORIZONTAL
         );
 
         SelectionAdapter typeSwitcher = new SelectionAdapter() {
@@ -132,14 +135,14 @@ public class SQLServerConnectionPage extends ConnectionPageWithAuth implements I
             hostLabel = new Label(addrGroup, SWT.NONE);
             hostLabel.setText(SQLServerUIMessages.dialog_connection_host_label);
             hostLabel.setLayoutData(new GridData(GridData.HORIZONTAL_ALIGN_END));
-            addControlToGroup(GROUP_CONNECTION, hostLabel);
 
             hostText = new Text(addrGroup, SWT.BORDER);
             gd = new GridData(GridData.FILL_HORIZONTAL);
             gd.grabExcessHorizontalSpace = true;
             hostText.setLayoutData(gd);
+            UIUtils.setDefaultTextControlWidthHint(hostText);
             hostText.addModifyListener(textListener);
-            addControlToGroup(GROUP_CONNECTION, hostText);
+            addControlToGroup(GROUP_CONNECTION, hostLabel, hostText);
 
             if (isDriverAzure || !needsPort) {
                 // no port number for Azure
@@ -148,14 +151,13 @@ public class SQLServerConnectionPage extends ConnectionPageWithAuth implements I
                 portLabel = new Label(addrGroup, SWT.NONE);
                 portLabel.setText(SQLServerUIMessages.dialog_connection_port_label);
                 portLabel.setLayoutData(new GridData(GridData.HORIZONTAL_ALIGN_END));
-                addControlToGroup(GROUP_CONNECTION, portLabel);
 
                 portText = new Text(addrGroup, SWT.BORDER);
                 gd = new GridData(GridData.CENTER);
                 gd.widthHint = UIUtils.getFontHeight(portText) * 7;
                 portText.setLayoutData(gd);
                 portText.addModifyListener(textListener);
-                addControlToGroup(GROUP_CONNECTION, portText);
+                addControlToGroup(GROUP_CONNECTION, portLabel, portText);
             }
         }
 
@@ -163,16 +165,15 @@ public class SQLServerConnectionPage extends ConnectionPageWithAuth implements I
             dbLabel = new Label(addrGroup, SWT.NONE);
             dbLabel.setText(SQLServerUIMessages.dialog_connection_database_schema_label);
             dbLabel.setLayoutData(new GridData(GridData.HORIZONTAL_ALIGN_END));
-            addControlToGroup(GROUP_CONNECTION, dbLabel);
 
             dbText = new Text(addrGroup, SWT.BORDER);
             gd = new GridData(GridData.FILL_HORIZONTAL);
             gd.grabExcessHorizontalSpace = true;
-            //gd.widthHint = 270;
             gd.horizontalSpan = 3;
             dbText.setLayoutData(gd);
+            UIUtils.setDefaultTextControlWidthHint(dbText);
             dbText.addModifyListener(textListener);
-            addControlToGroup(GROUP_CONNECTION, dbText);
+            addControlToGroup(GROUP_CONNECTION, dbLabel, dbText);
         }
 
         {
@@ -180,10 +181,7 @@ public class SQLServerConnectionPage extends ConnectionPageWithAuth implements I
         }
 
         {
-            Group secureGroup = new Group(settingsGroup, SWT.NONE);
-            secureGroup.setText(SQLServerUIMessages.dialog_setting_connection_settings);
-            secureGroup.setLayoutData(new GridData(GridData.FILL_HORIZONTAL));
-            secureGroup.setLayout(new GridLayout(1, false));
+            Composite secureGroup = UIUtils.createTitledComposite(settingsGroup, SQLServerUIMessages.dialog_setting_connection_settings, 1, GridData.FILL_HORIZONTAL);
 
             if (!isSqlServer) {
                 encryptPassword = UIUtils.createCheckbox(secureGroup, SQLServerUIMessages.dialog_setting_encrypt_password, SQLServerUIMessages.dialog_setting_encrypt_password_tip, false, 1);
@@ -223,6 +221,10 @@ public class SQLServerConnectionPage extends ConnectionPageWithAuth implements I
 
     @Override
     public Image getImage() {
+        DBPImage logoImage = site.getDriver().getLogoImage();
+        if (logoImage != null) {
+            return DBeaverIcons.getImage(logoImage);
+        }
         Image logo = LOGO_SYBASE;
         if (isSqlServer()) {
             if (isDriverAzure()) {
@@ -307,7 +309,7 @@ public class SQLServerConnectionPage extends ConnectionPageWithAuth implements I
     }
 
     @Override
-    public void saveSettings(DBPDataSourceContainer dataSource) {
+    public void saveSettings(@NotNull DBPDataSourceContainer dataSource) {
         DBPConnectionConfiguration connectionInfo = dataSource.getConnectionConfiguration();
         
         connectionInfo.setConfigurationType(
@@ -348,6 +350,7 @@ public class SQLServerConnectionPage extends ConnectionPageWithAuth implements I
         super.saveSettings(dataSource);
     }
 
+    @Nullable
     @Override
     public IDialogPage[] getDialogPages(boolean extrasOnly, boolean forceCreate) {
         return new IDialogPage[] { new DriverPropertiesDialogPage(this) };

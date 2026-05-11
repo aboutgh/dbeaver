@@ -1,6 +1,6 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2023 DBeaver Corp and others
+ * Copyright (C) 2010-2026 DBeaver Corp and others
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,8 +16,9 @@
  */
 package org.jkiss.dbeaver.model.impl.data;
 
+import org.jkiss.code.Nullable;
 import org.jkiss.dbeaver.DBException;
-import org.jkiss.dbeaver.model.data.DBDValue;
+import org.jkiss.dbeaver.model.data.DBDValueSurrogate;
 import org.jkiss.utils.CommonUtils;
 
 import java.io.PrintWriter;
@@ -26,7 +27,7 @@ import java.io.StringWriter;
 /**
  * DBDValueError
  */
-public final class DBDValueError implements DBDValue {
+public final class DBDValueError implements DBDValueSurrogate {
 
     private final Throwable error;
 
@@ -34,6 +35,7 @@ public final class DBDValueError implements DBDValue {
         this.error = error;
     }
 
+    @Nullable
     @Override
     public Object getRawValue() {
         return error;

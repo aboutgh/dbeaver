@@ -1,6 +1,6 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2023 DBeaver Corp and others
+ * Copyright (C) 2010-2026 DBeaver Corp and others
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,6 +27,8 @@ import java.util.Map;
  */
 public interface DBPDataSourceOrigin extends DBPObjectWithDetails<DBPDataSourceContainer> {
 
+    String LOCAL_ORIGIN_ID = "local";
+
     /**
      * Origin type. Unique
      */
@@ -49,5 +51,10 @@ public interface DBPDataSourceOrigin extends DBPObjectWithDetails<DBPDataSourceC
 
     @NotNull
     Map<String, Object> getDataSourceConfiguration();
+
+    @NotNull
+    default String getFullType(){
+        return getType() + (getSubType() == null ? "" : "." + getSubType());
+    }
 
 }

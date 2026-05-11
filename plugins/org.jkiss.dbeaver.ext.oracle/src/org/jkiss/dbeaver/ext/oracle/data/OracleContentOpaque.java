@@ -1,6 +1,6 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2023 DBeaver Corp and others
+ * Copyright (C) 2010-2026 DBeaver Corp and others
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@
 package org.jkiss.dbeaver.ext.oracle.data;
 
 import org.jkiss.code.NotNull;
+import org.jkiss.code.Nullable;
 import org.jkiss.dbeaver.Log;
 import org.jkiss.dbeaver.model.data.DBDContentStorage;
 import org.jkiss.dbeaver.model.data.DBDDisplayFormat;
@@ -65,7 +66,7 @@ public abstract class OracleContentOpaque<OPAQUE_TYPE extends Object> extends JD
     }
 
     @Override
-    public DBDContentStorage getContents(DBRProgressMonitor monitor)
+    public DBDContentStorage getContents(@NotNull DBRProgressMonitor monitor)
         throws DBCException
     {
         if (storage == null && opaque != null) {
@@ -116,8 +117,9 @@ public abstract class OracleContentOpaque<OPAQUE_TYPE extends Object> extends JD
         return opaque == null && storage == null;
     }
 
+    @Nullable
     @Override
-    public String getDisplayString(DBDDisplayFormat format)
+    public String getDisplayString(@NotNull DBDDisplayFormat format)
     {
         return opaque == null && storage == null ? null : "[" + getOpaqueType() + "]";
     }

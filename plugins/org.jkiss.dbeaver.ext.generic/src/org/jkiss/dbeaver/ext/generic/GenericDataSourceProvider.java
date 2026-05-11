@@ -1,6 +1,6 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2023 DBeaver Corp and others
+ * Copyright (C) 2010-2026 DBeaver Corp and others
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,14 +16,11 @@
  */
 package org.jkiss.dbeaver.ext.generic;
 
-import org.eclipse.core.runtime.IConfigurationElement;
-import org.eclipse.core.runtime.IExtensionRegistry;
-import org.eclipse.core.runtime.Platform;
 import org.jkiss.code.NotNull;
 import org.jkiss.dbeaver.DBException;
+import org.jkiss.dbeaver.ext.generic.model.GenericDataSource;
 import org.jkiss.dbeaver.ext.generic.model.meta.GenericMetaModel;
 import org.jkiss.dbeaver.ext.generic.model.meta.GenericMetaModelDescriptor;
-import org.jkiss.dbeaver.model.DBPDataSource;
 import org.jkiss.dbeaver.model.DBPDataSourceContainer;
 import org.jkiss.dbeaver.model.DatabaseURL;
 import org.jkiss.dbeaver.model.connection.DBPConnectionConfiguration;
@@ -33,85 +30,43 @@ import org.jkiss.dbeaver.model.impl.jdbc.JDBCDataSourceProvider;
 import org.jkiss.dbeaver.model.messages.ModelMessages;
 import org.jkiss.dbeaver.model.preferences.DBPPropertyDescriptor;
 import org.jkiss.dbeaver.model.runtime.DBRProgressMonitor;
-import org.jkiss.utils.ArrayUtils;
 import org.jkiss.utils.CommonUtils;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+public abstract class GenericDataSourceProvider<DATASOURCE extends GenericDataSource> extends JDBCDataSourceProvider<DATASOURCE> {
 
-public class GenericDataSourceProvider extends JDBCDataSourceProvider {
-
-    private final Map<String, GenericMetaModelDescriptor> metaModels = new HashMap<>();
-    private static final String EXTENSION_ID = "org.jkiss.dbeaver.generic.meta";
-
-    public GenericDataSourceProvider()
-    {
-        metaModels.put(GenericConstants.META_MODEL_STANDARD, new GenericMetaModelDescriptor());
-
-        List<String> replacedModels = new ArrayList<>();
-        IExtensionRegistry extensionRegistry = Platform.getExtensionRegistry();
-        IConfigurationElement[] extElements = extensionRegistry.getConfigurationElementsFor(EXTENSION_ID);
-        for (IConfigurationElement ext : extElements) {
-            GenericMetaModelDescriptor metaModel = new GenericMetaModelDescriptor(ext);
-            metaModels.put(metaModel.getId(), metaModel);
-            replacedModels.addAll(metaModel.getModelReplacements());
-        }
-        for (String rm : replacedModels) {
-            metaModels.remove(rm);
-        }
-        for (GenericMetaModelDescriptor metaModel : new ArrayList<>(metaModels.values())) {
-            for (String driverClass : ArrayUtils.safeArray(metaModel.getDriverClass())) {
-                metaModels.put(driverClass, metaModel);
-            }
-        }
+    protected GenericDataSourceProvider(@NotNull Class<? extends DATASOURCE> dsClass) {
+        super(dsClass);
     }
 
     @Override
-    public long getFeatures()
-    {
+    public long getFeatures() {
         return FEATURE_CATALOGS | FEATURE_SCHEMAS;
     }
 
+    @NotNull
     @Override
-    public String getConnectionURL(DBPDriver driver, DBPConnectionConfiguration connectionInfo)
-    {
+    public String getConnectionURL(@NotNull DBPDriver driver, @NotNull DBPConnectionConfiguration connectionInfo) {
         return DatabaseURL.generateUrlByTemplate(driver, connectionInfo);
     }
 
     @NotNull
     @Override
-    public DBPDataSource openDataSource(
+    public DATASOURCE openDataSource(
         @NotNull DBRProgressMonitor monitor,
         @NotNull DBPDataSourceContainer container)
-        throws DBException
-    {
-        GenericMetaModelDescriptor metaModel = null;
-        Object metaModelId = container.getDriver().getDriverParameter(GenericConstants.PARAM_META_MODEL);
-        if (metaModelId != null && !GenericConstants.META_MODEL_STANDARD.equals(metaModelId)) {
-            metaModel = metaModels.get(metaModelId.toString());
-            if (metaModel == null) {
-                log.warn("Meta model '" + metaModelId + "' not recognized. Default one will be used");
-            }
-        }
-        if (metaModel == null) {
-            // Try to get model by driver class
-            metaModel = metaModels.get(container.getDriver().getDriverClassName());
-        }
-        if (metaModel == null) {
-            metaModel = getStandardMetaModel();
-        }
-        GenericMetaModel metaModelInstance = metaModel.getInstance();
-        return metaModelInstance.createDataSourceImpl(monitor, container);
+        throws DBException {
+        GenericMetaModel metaModelInstance = GenericMetaModelRegistry.getInstance().getMetaModel(container);
+        return getDataSourceClass().cast(metaModelInstance.createDataSourceImpl(monitor, container));
     }
 
     protected GenericMetaModelDescriptor getStandardMetaModel() {
-        return metaModels.get(GenericConstants.META_MODEL_STANDARD);
+        return GenericMetaModelRegistry.getInstance().getStandardMetaModel();
     }
 
+    @NotNull
     @Override
-    public DBPPropertyDescriptor[] getConnectionProperties(DBRProgressMonitor monitor, DBPDriver driver, DBPConnectionConfiguration connectionInfo) throws DBException {
+    public DBPPropertyDescriptor[] getConnectionProperties(@NotNull DBRProgressMonitor monitor, @NotNull DBPDriver driver, @NotNull
+    DBPConnectionConfiguration connectionInfo) throws DBException {
         DBPPropertyDescriptor[] connectionProperties = super.getConnectionProperties(monitor, driver, connectionInfo);
         if (connectionProperties == null || connectionProperties.length == 0) {
             // Try to get list of supported properties from custom driver config

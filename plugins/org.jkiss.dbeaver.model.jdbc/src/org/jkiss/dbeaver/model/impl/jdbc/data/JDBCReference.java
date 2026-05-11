@@ -1,6 +1,6 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2023 DBeaver Corp and others
+ * Copyright (C) 2010-2026 DBeaver Corp and others
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,8 @@
  */
 package org.jkiss.dbeaver.model.impl.jdbc.data;
 
+import org.jkiss.code.NotNull;
+import org.jkiss.code.Nullable;
 import org.jkiss.dbeaver.Log;
 import org.jkiss.dbeaver.model.DBConstants;
 import org.jkiss.dbeaver.model.DBUtils;
@@ -23,6 +25,7 @@ import org.jkiss.dbeaver.model.data.DBDReference;
 import org.jkiss.dbeaver.model.data.DBDValueHandler;
 import org.jkiss.dbeaver.model.exec.DBCException;
 import org.jkiss.dbeaver.model.exec.DBCSession;
+import org.jkiss.dbeaver.model.runtime.DBRProgressMonitor;
 import org.jkiss.dbeaver.model.struct.DBSDataType;
 
 import java.sql.Ref;
@@ -36,28 +39,27 @@ public class JDBCReference implements DBDReference {
     private static final Log log = Log.getLog(JDBCReference.class);
 
     private DBSDataType type;
-    private Ref value;
+    private Object value;
     private Object refObject;
 
-    public JDBCReference(DBSDataType type, Ref value) throws DBCException
-    {
+    public JDBCReference(@NotNull DBSDataType type, @Nullable Object value) throws DBCException {
         this.type = type;
         this.value = value;
     }
 
-    public Ref getValue() throws DBCException
-    {
+    @Nullable
+    public Object getValue() throws DBCException {
         return value;
     }
 
+    @Nullable
     @Override
     public Object getRawValue() {
         return value;
     }
 
     @Override
-    public boolean isNull()
-    {
+    public boolean isNull() {
         return value == null;
     }
 
@@ -67,34 +69,27 @@ public class JDBCReference implements DBDReference {
     }
 
     @Override
-    public void release()
-    {
+    public void release() {
         type = null;
         value = null;
     }
 
+    @NotNull
     @Override
-    public DBSDataType getReferencedType()
-    {
+    public DBSDataType getReferencedType() {
         return type;
     }
 
+    @Nullable
     @Override
-    public Object getReferencedObject(DBCSession session) throws DBCException
-    {
-        if (refObject == null) {
+    public Object getReferencedObject(@NotNull DBCSession session) throws DBCException {
+        if (refObject == null && value instanceof Ref ref) {
             try {
-                session.getProgressMonitor().beginTask("Retrieve references object", 3);
-                try {
-                    session.getProgressMonitor().worked(1);
-                    Object refValue = value.getObject();
-                    session.getProgressMonitor().worked(1);
-                    DBDValueHandler valueHandler = DBUtils.findValueHandler(session, type);
-                    refObject = valueHandler.getValueFromObject(session, type, refValue, false, false);
-                    session.getProgressMonitor().worked(1);
-                } finally {
-                    session.getProgressMonitor().done();
-                }
+                DBRProgressMonitor monitor = session.getProgressMonitor();
+                monitor.subTask("Read reference '" + type.getName() + "'");
+                Object refValue = ref.getObject();
+                DBDValueHandler valueHandler = DBUtils.findValueHandler(session, type);
+                refObject = valueHandler.getValueFromObject(session, type, refValue, false, false);
             } catch (SQLException e) {
                 throw new DBCException("Can't obtain object reference");
             }
@@ -103,10 +98,10 @@ public class JDBCReference implements DBDReference {
     }
 
     @Override
-    public String toString()
-    {
+    public String toString() {
         try {
-            return value == null ? DBConstants.NULL_VALUE_LABEL : value.getBaseTypeName();
+            return value == null ? DBConstants.NULL_VALUE_LABEL :
+                value instanceof Ref ? ((Ref) value).getBaseTypeName() : value.toString();
         } catch (SQLException e) {
             return value.toString();
         }

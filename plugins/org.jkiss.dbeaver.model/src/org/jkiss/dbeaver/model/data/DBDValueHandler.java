@@ -1,6 +1,6 @@
 /*
  * DBeaver - Universal Database Manager
- * Copyright (C) 2010-2023 DBeaver Corp and others
+ * Copyright (C) 2010-2026 DBeaver Corp and others
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,6 +21,8 @@ import org.jkiss.code.NotNull;
 import org.jkiss.code.Nullable;
 import org.jkiss.dbeaver.model.exec.*;
 import org.jkiss.dbeaver.model.struct.DBSTypedObject;
+
+import java.util.Comparator;
 
 /**
  * DBD Value Handler.
@@ -60,8 +62,12 @@ public interface DBDValueHandler extends DBDValueRenderer
      * @throws org.jkiss.dbeaver.model.exec.DBCException on error
      */
     @Nullable
-    Object fetchValueObject(@NotNull DBCSession session, @NotNull DBCResultSet resultSet, @NotNull DBSTypedObject type, int index)
-        throws DBCException;
+    Object fetchValueObject(
+        @NotNull DBCSession session,
+        @NotNull DBCResultSet resultSet,
+        @NotNull DBSTypedObject type,
+        int index
+    ) throws DBCException;
 
     /**
      * Binds specified parameter to statement
@@ -73,8 +79,13 @@ public interface DBDValueHandler extends DBDValueRenderer
      * @param value parameter value (can be null). Value is get from fetchValueObject function or from
      * object set by editor (editValue function).  @throws org.jkiss.dbeaver.model.exec.DBCException on error
      */
-    void bindValueObject(@NotNull DBCSession session, @NotNull DBCStatement statement, @NotNull DBSTypedObject type, int index, @Nullable Object value)
-        throws DBCException;
+    void bindValueObject(
+        @NotNull DBCSession session,
+        @NotNull DBCStatement statement,
+        @NotNull DBSTypedObject type,
+        int index,
+        @Nullable Object value
+    ) throws DBCException;
 
     /**
      * Creates new value from object.
@@ -91,8 +102,13 @@ public interface DBDValueHandler extends DBDValueRenderer
      * @throws org.jkiss.dbeaver.model.exec.DBCException on error
      */
     @Nullable
-    Object getValueFromObject(@NotNull DBCSession session, @NotNull DBSTypedObject type, @Nullable Object object, boolean copy, boolean validateValue)
-        throws DBCException;
+    Object getValueFromObject(
+        @NotNull DBCSession session,
+        @NotNull DBSTypedObject type,
+        @Nullable Object object,
+        boolean copy,
+        boolean validateValue
+    ) throws DBCException;
 
     /**
      * Creates new value object.
@@ -116,5 +132,15 @@ public interface DBDValueHandler extends DBDValueRenderer
      */
     @NotNull
     DBCLogicalOperator[] getSupportedOperators(@NotNull DBSTypedObject attribute);
+
+    /**
+     * Get comparator for compare values
+     *
+     * @return comparator
+     */
+    @Nullable
+    default Comparator<Object> getComparator() {
+        return null;
+    }
 
 }
